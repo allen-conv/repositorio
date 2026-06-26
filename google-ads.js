@@ -1,6 +1,8 @@
 (function () {
   'use strict';
 
+  var BRIDGE_EVENT_NAME = 'gads_conversion';
+
   var cfg = window.GADS_CONFIG;
 
   if (!cfg || !cfg.conversionId || !cfg.sendTo) {
@@ -18,22 +20,6 @@
 
   window.dataLayer = window.dataLayer || [];
 
-  function ensureGtag() {
-    if (typeof window.gtag === 'function') return;
-
-    window.gtag = function () {
-      window.dataLayer.push(arguments);
-    };
-
-    var s = document.createElement('script');
-    s.async = true;
-    s.src = 'https://www.googletagmanager.com/gtag/js?id=' + cfg.conversionId;
-    document.head.appendChild(s);
-
-    window.gtag('js', new Date());
-    window.gtag('config', cfg.conversionId);
-  }
-
   function extractEcommerceParams(evt) {
     var src = evt.ecommerce || evt;
     var params = {};
@@ -45,25 +31,34 @@
     return params;
   }
 
-  // Dispara a conversão no Google Ads para um evento específico.
-  function sendConversion(eventName, evt) {
+  // Empacota e envia o evento-ponte para o GTM processar.
+  function pushBridgeEvent(eventName, evt) {
     var label = cfg.sendTo[eventName];
     if (!label) {
       log('Evento "' + eventName + '" recebido mas sem label configurado — ignorado.');
       return;
     }
 
-    ensureGtag();
+    var ecommerceParams = extractEcommerceParams(evt);
 
-    var params = extractEcommerceParams(evt);
-    params.send_to = cfg.conversionId + '/' + label;
-
-    if (eventName === 'purchase' && !params.transaction_id) {
+    // purchase é o único evento onde duplicidade é crítica:
+    // o Google Ads usa transaction_id para deduplicar automaticamente.
+    if (eventName === 'purchase' && !ecommerceParams.transaction_id) {
       log('AVISO: evento "purchase" sem transaction_id — risco de contagem duplicada.');
     }
 
-    window.gtag('event', 'conversion', params);
-    log('Conversão enviada:', eventName, params);
+    var bridgePayload = {
+      event: BRIDGE_EVENT_NAME,
+      gads_conversion_id: cfg.conversionId,
+      gads_conversion_label: label,
+      gads_source_event: eventName, // útil para debug e para diferenciar triggers no GTM, se quiser
+      value: ecommerceParams.value,
+      currency: ecommerceParams.currency,
+      transaction_id: ecommerceParams.transaction_id
+    };
+
+    window.dataLayer.push(bridgePayload);
+    log('Evento-ponte enviado ao dataLayer:', bridgePayload);
   }
 
   var originalPush = window.dataLayer.push;
@@ -72,8 +67,14 @@
     var args = Array.prototype.slice.call(arguments);
 
     args.forEach(function (evt) {
-      if (evt && typeof evt === 'object' && evt.event && cfg.sendTo.hasOwnProperty(evt.event)) {
-        sendConversion(evt.event, evt);
+      if (
+        evt &&
+        typeof evt === 'object' &&
+        evt.event &&
+        evt.event !== BRIDGE_EVENT_NAME && // nunca reagir ao próprio evento-ponte
+        cfg.sendTo.hasOwnProperty(evt.event)
+      ) {
+        pushBridgeEvent(evt.event, evt);
       }
     });
 
