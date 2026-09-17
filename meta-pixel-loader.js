@@ -34,7 +34,8 @@
   }
 
   // ---------------------------------------------------------------------
-
+  // fbq base loader (snippet oficial do Meta Pixel)
+  // ---------------------------------------------------------------------
   function loadFbq() {
     if (window.fbq) return;
     !function (f, b, e, v, n, t, s) {
@@ -131,7 +132,9 @@
   }
 
   // ---------------------------------------------------------------------
-
+  // event_id — o time de dev vai mandar via dataLayer (eventModel.event_id).
+  // Deixamos duas variações de nome cobertas até confirmarem o campo exato.
+  // ---------------------------------------------------------------------
   function getEventId(eventModel) {
     var id = eventModel && (eventModel.event_id || eventModel.eventId);
     if (!id) {
@@ -286,35 +289,44 @@
   // ---------------------------------------------------------------------
   // Intercepta window.dataLayer.push (mesmo mecanismo do edrone-loader)
   // ---------------------------------------------------------------------
+
+  function processDataLayerItem(item, source) {
+    if (!item) return;
+    var eventName  = item.event;
+    var eventModel = item.eventModel || {};
+
+    log('dataLayer ' + source, { event: eventName, eventModel: eventModel });
+
+    switch (eventName) {
+      case 'view_item':         handleViewItem(eventModel);        break;
+      case 'add_to_cart':       handleAddToCart(eventModel);       break;
+      case 'begin_checkout':    handleCheckoutFamily('InitiateCheckout', eventModel); break;
+      case 'add_shipping_info': handleAddShippingInfo(eventModel); break;
+      case 'add_payment_info':  handleCheckoutFamily('AddPaymentInfo', eventModel);   break;
+      case 'purchase':          handlePurchase(eventModel);        break;
+      case 'login_success':     handleLoginSuccess(eventModel);    break;
+    }
+  }
+
   function interceptDataLayer() {
     window.dataLayer = window.dataLayer || [];
+
+    var backlog = window.dataLayer.slice();
+    backlog.forEach(function (item) { processDataLayerItem(item, 'no backlog (já estava no array)'); });
+
     var _originalPush = window.dataLayer.push.bind(window.dataLayer);
 
     window.dataLayer.push = function () {
       var result = _originalPush.apply(window.dataLayer, arguments);
 
       Array.prototype.forEach.call(arguments, function (item) {
-        if (!item) return;
-        var eventName  = item.event;
-        var eventModel = item.eventModel || {};
-
-        log('dataLayer.push interceptado', { event: eventName, eventModel: eventModel });
-
-        switch (eventName) {
-          case 'view_item':         handleViewItem(eventModel);        break;
-          case 'add_to_cart':       handleAddToCart(eventModel);       break;
-          case 'begin_checkout':    handleCheckoutFamily('InitiateCheckout', eventModel); break;
-          case 'add_shipping_info': handleAddShippingInfo(eventModel); break;
-          case 'add_payment_info':  handleCheckoutFamily('AddPaymentInfo', eventModel);   break;
-          case 'purchase':          handlePurchase(eventModel);        break;
-          case 'login_success':     handleLoginSuccess(eventModel);    break;
-        }
+        processDataLayerItem(item, 'interceptado');
       });
 
       return result;
     };
 
-    log('dataLayer.push interceptado com sucesso', {});
+    log('dataLayer.push interceptado com sucesso', { itens_no_backlog: backlog.length });
   }
 
   initPixel();
