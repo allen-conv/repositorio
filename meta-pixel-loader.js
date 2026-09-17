@@ -50,7 +50,7 @@
   }
 
   // ---------------------------------------------------------------------
-
+  
   var USER_DATA_KEY = 'meta_user_data';
 
   function lsGetUserData() {
@@ -290,10 +290,29 @@
   // Intercepta window.dataLayer.push (mesmo mecanismo do edrone-loader)
   // ---------------------------------------------------------------------
 
+  function extractEventPayload(item) {
+    if (!item) return null;
+
+    // Formato "objeto simples", conforme a documentação: {event: 'x', eventModel: {...}}
+    if (item.event) {
+      return { eventName: item.event, eventModel: item.eventModel || item };
+    }
+
+    if (item.length >= 2 && item[0] === 'event') {
+      var params = item[2] || {};
+      return { eventName: item[1], eventModel: params.eventModel || params };
+    }
+
+    return null;
+  }
+
   function processDataLayerItem(item, source) {
     if (!item) return;
-    var eventName  = item.event;
-    var eventModel = item.eventModel || {};
+    var payload = extractEventPayload(item);
+    if (!payload) return; // 'config', 'js', ou qualquer coisa fora do padrão esperado
+
+    var eventName  = payload.eventName;
+    var eventModel = payload.eventModel || {};
 
     log('dataLayer ' + source, { event: eventName, eventModel: eventModel });
 
@@ -311,6 +330,10 @@
   function interceptDataLayer() {
     window.dataLayer = window.dataLayer || [];
 
+    // Reprocessa tudo que já foi empurrado para o dataLayer ANTES deste
+    // script carregar (ex.: view_item disparado pelo código do site antes
+    // do GTM injetar esta tag). Sem isso, qualquer evento anterior ao
+    // carregamento do loader é invisível para o pixel.
     var backlog = window.dataLayer.slice();
     backlog.forEach(function (item) { processDataLayerItem(item, 'no backlog (já estava no array)'); });
 
