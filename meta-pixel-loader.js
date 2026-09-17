@@ -4,8 +4,9 @@
   if (window.__metaPixelLoaderLoaded) return;
   window.__metaPixelLoaderLoaded = true;
 
-  var PIXEL_ID = window.meta_pixel_id || '';
-  var DEBUG    = window.meta_debug    || false;
+  var PIXEL_ID          = window.meta_pixel_id          || '';
+  var DEBUG             = window.meta_debug             || false;
+  var SKIP_OPENBRIDGE   = window.meta_skip_openbridge   || false;
 
   if (!PIXEL_ID) {
     console.warn('[meta-pixel-loader] window.meta_pixel_id não definido. Abortando.');
@@ -51,16 +52,6 @@
 
   // ---------------------------------------------------------------------
   // Advanced Matching (user_data)
-  //
-  // O antigo setup em GTM lia um localStorage "user_data" (chaves em
-  // português: city/region/cep/country + email/first_name/last_name/phone)
-  // que era preenchido por outro processo fora deste container GTM — não
-  // existe nenhuma tag aqui que escreva nele.
-  //
-  // Aqui a gente para de depender dessa gambiarra externa e passa a montar
-  // esse cache sozinho, a partir do que já existe documentado no dataLayer:
-  //   - "customer" (login_success / purchase) -> email, nome, telefone, taxvat
-  //   - "shipping" (add_shipping_info / purchase) -> cidade, região, cep, país
   // ---------------------------------------------------------------------
   var USER_DATA_KEY = 'meta_user_data';
 
@@ -97,8 +88,6 @@
       first_name: customer.first_name || '',
       last_name:  customer.last_name  || '',
       phone:      (customer.phone || '').replace(/\D/g, ''),
-      // Opcional: usamos o CPF como external_id (o Pixel faz o hash sozinho).
-      // O antigo setup em GTM não enviava esse campo — remova se não quiserem.
       taxvat:     (customer.taxvat || '').replace(/\D/g, '')
     });
   }
@@ -140,8 +129,12 @@
   function initPixel() {
     loadFbq();
     fbq('init', PIXEL_ID, buildMatchData());
+    if (SKIP_OPENBRIDGE) {
+      fbq('skipOpenbridge', PIXEL_ID);
+      log('OpenBridge desativado para este pixel', { pixel_id: PIXEL_ID });
+    }
     fbq('track', 'PageView');
-    log('Pixel inicializado', { pixel_id: PIXEL_ID });
+    log('Pixel inicializado', { pixel_id: PIXEL_ID, skip_openbridge: SKIP_OPENBRIDGE });
   }
 
   // ---------------------------------------------------------------------
@@ -311,10 +304,6 @@
       return { eventName: item.event, eventModel: item.eventModel || item };
     }
 
-    // Formato gtag/arguments: dataLayer.push('event', 'nome_evento', {...})
-    // Chega aqui como um objeto tipo-array (Arguments) com 3 posições.
-    // O eventModel pode estar aninhado em params.eventModel, ou os próprios
-    // params já SÃO o eventModel — cobrimos os dois casos.
     if (item.length >= 2 && item[0] === 'event') {
       var params = item[2] || {};
       return { eventName: item[1], eventModel: params.eventModel || params };
@@ -367,10 +356,6 @@
   function interceptDataLayer() {
     window.dataLayer = window.dataLayer || [];
 
-    // Reprocessa tudo que já foi empurrado para o dataLayer ANTES deste
-    // script carregar (ex.: view_item disparado pelo código do site antes
-    // do GTM injetar esta tag). Sem isso, qualquer evento anterior ao
-    // carregamento do loader é invisível para o pixel.
     var backlog = window.dataLayer.slice();
     backlog.forEach(function (item) { processDataLayerItem(item, 'no backlog (já estava no array)'); });
 
