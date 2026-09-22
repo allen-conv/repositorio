@@ -386,7 +386,8 @@
       length: raw.length,
       item0: raw.item0,
       item1: raw.item1,
-      has_dot_event: raw.has_dot_event
+      has_dot_event: raw.has_dot_event,
+      eventModel: eventModel
     });
 
     if (eventName === 'login_success') { handleLoginSuccess(eventModel); return; }
