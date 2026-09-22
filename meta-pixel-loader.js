@@ -324,6 +324,40 @@
     return !!(eventModel && (eventModel.eventModel || eventModel.ecommerce));
   }
 
+  // ---------------------------------------------------------------------
+  // Dedupe por conteúdo, com janela BEM curta — cobre o caso confirmado em
+  // teste real: o site empurra o MESMO clique duas vezes, uma via gtag
+  // (['event', nome, {...}]) e outra via push direto ({event, eventModel}),
+  // com o eventModel idêntico nos dois, em sequência imediata (mesmo ciclo
+  // de execução, sem gtm.click/gtm.formSubmit entre eles). Uma janela de
+  // poucas centenas de ms é segura aqui: não dá pra um clique real do
+  // usuário acontecer nesse intervalo, então não bloqueia uma repetição
+  // intencional feita alguns segundos depois.
+  // ---------------------------------------------------------------------
+  var DEDUPE_WINDOW_MS = window.meta_dedupe_window_ms || 500;
+  var _recentSignatures = {};
+
+  function buildDedupeSignature(eventName, eventModel) {
+    var items = (eventModel && eventModel.items) || [];
+    var ids = items.map(function (item) {
+      return String(firstVariantId(item) || item.item_id);
+    });
+    return [
+      eventName,
+      ids.join(','),
+      eventModel && eventModel.value,
+      eventModel && eventModel.currency
+    ].join('|');
+  }
+
+  function isDuplicateEvent(signature) {
+    var now = Date.now();
+    var last = _recentSignatures[signature];
+    if (last != null && (now - last) < DEDUPE_WINDOW_MS) return true;
+    _recentSignatures[signature] = now;
+    return false;
+  }
+
   // Eventos que efetivamente disparam pixel — sujeitos ao dedupe acima.
   // login_success não dispara pixel (só alimenta o user_data), então fica de fora.
   var EVENT_HANDLERS = {
@@ -397,6 +431,12 @@
 
     if (isEventModelContaminado(eventModel)) {
       log(eventName + ' | IGNORADO — eventModel contaminado (tem ecommerce/eventModel aninhado, resíduo de merge do GTM)', { eventModel: eventModel });
+      return;
+    }
+
+    var signature = buildDedupeSignature(eventName, eventModel);
+    if (isDuplicateEvent(signature)) {
+      log(eventName + ' | IGNORADO — mesmo clique empurrado 2x no dataLayer (gtag + push direto) em sequência imediata', { signature: signature });
       return;
     }
 
