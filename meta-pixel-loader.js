@@ -420,13 +420,15 @@
   var EVENT_HANDLERS = {
     view_item:         handleViewItem,
     add_to_cart:       handleAddToCart,
-    begin_checkout:    function (m) { return handleCheckoutFamily('InitiateCheckout', m); },
+    // InitiateCheckout dispara no "initiate_checkout" (chegada no checkout,
+    // já logado) — não no "begin_checkout" (clique no botão do carrinho),
+    // porque só o initiate_checkout vem com product_id/variation_id
+    // preenchidos corretamente; no begin_checkout o variant_id vem zerado
+    // (placeholder), sem item_id/product_id nenhum.
+    initiate_checkout: function (m) { return handleCheckoutFamily('InitiateCheckout', m); },
     add_shipping_info: handleAddShippingInfo,
     add_payment_info:  function (m) { return handleCheckoutFamily('AddPaymentInfo', m); },
     purchase:          handlePurchase
-    // initiate_checkout (chegada no checkout, já logado) NÃO mapeado de propósito —
-    // o InitiateCheckout do Meta deve sair só no begin_checkout (clique no botão
-    // de compra que leva pro checkout), não na chegada na página.
   };
 
   // ---------------------------------------------------------------------
