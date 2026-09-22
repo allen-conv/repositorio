@@ -6,6 +6,11 @@
 
   var PIXEL_ID          = window.meta_pixel_id          || '';
   var DEBUG             = window.meta_debug             || false;
+  // Desliga o OpenBridge (Conversions API Gateway) para este pixel — opcional.
+  // Isso evita o eid automático "ob3_plugin_set_..." que o próprio fbevents.js
+  // injeta quando esse recurso está ativo no Business Manager. Confirme com
+  // quem administra a conta antes de ativar: desativa o recurso por inteiro,
+  // não só "quando falta event_id".
   var SKIP_OPENBRIDGE   = window.meta_skip_openbridge   || false;
 
   if (!PIXEL_ID) {
@@ -52,6 +57,16 @@
 
   // ---------------------------------------------------------------------
   // Advanced Matching (user_data)
+  //
+  // O antigo setup em GTM lia um localStorage "user_data" (chaves em
+  // português: city/region/cep/country + email/first_name/last_name/phone)
+  // que era preenchido por outro processo fora deste container GTM — não
+  // existe nenhuma tag aqui que escreva nele.
+  //
+  // Aqui a gente para de depender dessa gambiarra externa e passa a montar
+  // esse cache sozinho, a partir do que já existe documentado no dataLayer:
+  //   - "customer" (login_success / purchase) -> email, nome, telefone, taxvat
+  //   - "shipping" (add_shipping_info / purchase) -> cidade, região, cep, país
   // ---------------------------------------------------------------------
   var USER_DATA_KEY = 'meta_user_data';
 
@@ -88,6 +103,8 @@
       first_name: customer.first_name || '',
       last_name:  customer.last_name  || '',
       phone:      (customer.phone || '').replace(/\D/g, ''),
+      // Opcional: usamos o CPF como external_id (o Pixel faz o hash sozinho).
+      // O antigo setup em GTM não enviava esse campo — remova se não quiserem.
       taxvat:     (customer.taxvat || '').replace(/\D/g, '')
     });
   }
@@ -293,6 +310,49 @@
   }
 
   // ---------------------------------------------------------------------
+  // Dedupe por conteúdo — o site empurra o MESMO evento de negócio duas
+  // vezes no dataLayer (uma via gtag, outra via push direto {event,
+  // eventModel}), então precisamos ignorar a segunda ocorrência mesmo sem
+  // um event_id em comum. A assinatura usa o nome do evento + os
+  // variant_ids/produto + valor — se bater de novo numa janela curta de
+  // tempo, é o mesmo evento duplicado, não uma ação nova do usuário.
+  // ---------------------------------------------------------------------
+  var DEDUPE_WINDOW_MS = window.meta_dedupe_window_ms || 2000;
+  var _recentSignatures = {};
+
+  function buildDedupeSignature(eventName, eventModel) {
+    var items = (eventModel && eventModel.items) || [];
+    var ids = items.map(function (item) {
+      return String(firstVariantId(item) || item.item_id);
+    });
+    return [
+      eventName,
+      ids.join(','),
+      eventModel && eventModel.value,
+      eventModel && eventModel.currency
+    ].join('|');
+  }
+
+  function isDuplicateEvent(signature) {
+    var now = Date.now();
+    var last = _recentSignatures[signature];
+    if (last != null && (now - last) < DEDUPE_WINDOW_MS) return true;
+    _recentSignatures[signature] = now;
+    return false;
+  }
+
+  // Eventos que efetivamente disparam pixel — sujeitos ao dedupe acima.
+  // login_success não dispara pixel (só alimenta o user_data), então fica de fora.
+  var EVENT_HANDLERS = {
+    view_item:         handleViewItem,
+    add_to_cart:       handleAddToCart,
+    begin_checkout:    function (m) { return handleCheckoutFamily('InitiateCheckout', m); },
+    add_shipping_info: handleAddShippingInfo,
+    add_payment_info:  function (m) { return handleCheckoutFamily('AddPaymentInfo', m); },
+    purchase:          handlePurchase
+  };
+
+  // ---------------------------------------------------------------------
   // Intercepta window.dataLayer.push (mesmo mecanismo do edrone-loader)
   // ---------------------------------------------------------------------
 
@@ -304,6 +364,10 @@
       return { eventName: item.event, eventModel: item.eventModel || item };
     }
 
+    // Formato gtag/arguments: dataLayer.push('event', 'nome_evento', {...})
+    // Chega aqui como um objeto tipo-array (Arguments) com 3 posições.
+    // O eventModel pode estar aninhado em params.eventModel, ou os próprios
+    // params já SÃO o eventModel — cobrimos os dois casos.
     if (item.length >= 2 && item[0] === 'event') {
       var params = item[2] || {};
       return { eventName: item[1], eventModel: params.eventModel || params };
@@ -342,20 +406,27 @@
       has_dot_event: raw.has_dot_event
     });
 
-    switch (eventName) {
-      case 'view_item':         handleViewItem(eventModel);        break;
-      case 'add_to_cart':       handleAddToCart(eventModel);       break;
-      case 'begin_checkout':    handleCheckoutFamily('InitiateCheckout', eventModel); break;
-      case 'add_shipping_info': handleAddShippingInfo(eventModel); break;
-      case 'add_payment_info':  handleCheckoutFamily('AddPaymentInfo', eventModel);   break;
-      case 'purchase':          handlePurchase(eventModel);        break;
-      case 'login_success':     handleLoginSuccess(eventModel);    break;
+    if (eventName === 'login_success') { handleLoginSuccess(eventModel); return; }
+
+    var handler = EVENT_HANDLERS[eventName];
+    if (!handler) return;
+
+    var signature = buildDedupeSignature(eventName, eventModel);
+    if (isDuplicateEvent(signature)) {
+      log(eventName + ' | IGNORADO — mesmo evento já processado há pouco (duplicado no dataLayer)', { signature: signature });
+      return;
     }
+
+    handler(eventModel);
   }
 
   function interceptDataLayer() {
     window.dataLayer = window.dataLayer || [];
 
+    // Reprocessa tudo que já foi empurrado para o dataLayer ANTES deste
+    // script carregar (ex.: view_item disparado pelo código do site antes
+    // do GTM injetar esta tag). Sem isso, qualquer evento anterior ao
+    // carregamento do loader é invisível para o pixel.
     var backlog = window.dataLayer.slice();
     backlog.forEach(function (item) { processDataLayerItem(item, 'no backlog (já estava no array)'); });
 
