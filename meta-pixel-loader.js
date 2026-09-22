@@ -212,11 +212,32 @@
     log('Disparado: ' + pixelEvent, { customData: data, eventID: eventId });
   }
 
-  function firstVariantId(item) {
-    if (item && Array.isArray(item.variantion) && item.variantion.length && item.variantion[0].variant_id) {
+  // Os itens do carrinho vêm em pelo menos dois formatos diferentes,
+  // dependendo da página: na página de produto/carrinho, o item traz
+  // item_id (produto pai) + variantion[0].variant_id (variação); no
+  // checkout, o item traz product_id (produto pai) + variation_id
+  // (variação) direto, sem o array variantion — e o item_id nessa página
+  // é outra coisa (um id de linha do carrinho, não o produto). Essas duas
+  // funções normalizam os dois formatos num só lugar.
+  function getVariantId(item) {
+    if (!item) return null;
+    if (Array.isArray(item.variantion) && item.variantion.length && item.variantion[0].variant_id) {
       return String(item.variantion[0].variant_id);
     }
+    if (item.variation_id != null) return String(item.variation_id);
     return null;
+  }
+
+  function getProductId(item) {
+    if (!item) return null;
+    if (item.product_id != null) return String(item.product_id); // formato do checkout
+    if (item.item_id != null)    return String(item.item_id);    // formato da página de produto
+    if (item.id != null)         return String(item.id);
+    return null;
+  }
+
+  function firstVariantId(item) {
+    return getVariantId(item);
   }
 
   function buildContents(items) {
@@ -225,7 +246,7 @@
     var numItems   = 0;
 
     (items || []).forEach(function (item) {
-      var variantId = firstVariantId(item) || String(item.item_id);
+      var variantId = getVariantId(item) || getProductId(item);
       contentIds.push(variantId);
       contents.push(clean({
         id:         variantId,
@@ -250,7 +271,7 @@
 
     track('ViewContent', {
       content_type: 'product_group',
-      content_ids:  [String(item.item_id)],
+      content_ids:  [getProductId(item)],
       content_name: item.item_name,
       value:        eventModel.value,
       currency:     eventModel.currency || 'BRL',
@@ -272,7 +293,7 @@
 
     track('AddToCart', {
       content_type: 'product',
-      content_ids:  [variantId || String(item.item_id)],
+      content_ids:  [variantId || getProductId(item)],
       content_name: item.item_name,
       value:        eventModel.value,
       currency:     eventModel.currency || 'BRL',
@@ -376,7 +397,7 @@
   function buildDedupeSignature(eventName, eventModel) {
     var items = (eventModel && eventModel.items) || [];
     var ids = items.map(function (item) {
-      return String(firstVariantId(item) || item.item_id);
+      return String(getVariantId(item) || getProductId(item));
     });
     return [
       eventName,
@@ -403,6 +424,9 @@
     add_shipping_info: handleAddShippingInfo,
     add_payment_info:  function (m) { return handleCheckoutFamily('AddPaymentInfo', m); },
     purchase:          handlePurchase
+    // initiate_checkout (chegada no checkout, já logado) NÃO mapeado de propósito —
+    // o InitiateCheckout do Meta deve sair só no begin_checkout (clique no botão
+    // de compra que leva pro checkout), não na chegada na página.
   };
 
   // ---------------------------------------------------------------------
