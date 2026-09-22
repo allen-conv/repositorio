@@ -26,6 +26,41 @@
     persistLogEntry(label, serialized);
   }
 
+  // ---------------------------------------------------------------------
+  // Log persistente — sobrevive a troca de página/reload dentro da mesma
+  // aba (diferente do console, que reseta). Útil pra capturar eventos que
+  // disparam bem na hora da navegação (ex.: begin_checkout no clique que
+  // já leva pro checkout). Roda window.meta_pixel_debug_dump() no console,
+  // em qualquer página, pra ver tudo que foi registrado até agora.
+  // ---------------------------------------------------------------------
+  var DEBUG_LOG_KEY   = 'meta_pixel_debug_log';
+  var DEBUG_LOG_LIMIT = 200;
+
+  function persistLogEntry(label, serialized) {
+    try {
+      var buf = JSON.parse(sessionStorage.getItem(DEBUG_LOG_KEY) || '[]');
+      buf.push({ t: new Date().toISOString(), url: location.href, label: label, data: serialized });
+      if (buf.length > DEBUG_LOG_LIMIT) buf = buf.slice(buf.length - DEBUG_LOG_LIMIT);
+      sessionStorage.setItem(DEBUG_LOG_KEY, JSON.stringify(buf));
+    } catch (e) { /* sessionStorage indisponível — ignora, não quebra o resto */ }
+  }
+
+  window.meta_pixel_debug_dump = function () {
+    try {
+      var buf = JSON.parse(sessionStorage.getItem(DEBUG_LOG_KEY) || '[]');
+      console.log(JSON.stringify(buf, null, 2));
+      return buf;
+    } catch (e) {
+      console.log('[Meta Pixel] Nenhum log salvo ainda.');
+      return [];
+    }
+  };
+
+  window.meta_pixel_debug_clear = function () {
+    try { sessionStorage.removeItem(DEBUG_LOG_KEY); } catch (e) {}
+    console.log('[Meta Pixel] Log persistente limpo.');
+  };
+
   function clean(obj) {
     var out = {};
     Object.keys(obj).forEach(function (k) {
