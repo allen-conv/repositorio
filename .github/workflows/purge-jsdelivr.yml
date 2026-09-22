@@ -1,0 +1,17 @@
+name: Purge jsDelivr cache
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'meta-pixel-loader.js'
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Purge jsDelivr cache for @main
+        run: |
+          curl -s "https://purge.jsdelivr.net/gh/${{ github.repository }}@main/meta-pixel-loader.js"
+          echo "Purge solicitado para meta-pixel-loader.js@main"
