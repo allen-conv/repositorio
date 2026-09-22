@@ -310,35 +310,18 @@
   }
 
   // ---------------------------------------------------------------------
-  // Dedupe por conteúdo — o site empurra o MESMO evento de negócio duas
-  // vezes no dataLayer (uma via gtag, outra via push direto {event,
-  // eventModel}), então precisamos ignorar a segunda ocorrência mesmo sem
-  // um event_id em comum. A assinatura usa o nome do evento + os
-  // variant_ids/produto + valor — se bater de novo numa janela curta de
-  // tempo, é o mesmo evento duplicado, não uma ação nova do usuário.
+  // Filtro de "eventModel contaminado" — o dataLayer do site às vezes
+  // empurra a MESMA ação duas vezes: uma vez com o eventModel "limpo"
+  // (só os campos documentados) e outra com resíduo de um merge do GTM,
+  // onde o eventModel carrega, aninhadas dentro dele mesmo, as chaves
+  // "ecommerce" e "eventModel" (que não existem na documentação). Isso
+  // não depende de ordem nem de tempo — a cópia contaminada às vezes vem
+  // antes, às vezes depois da limpa — então filtramos pela ESTRUTURA, não
+  // por um intervalo, o que evita bloquear uma ação repetida de propósito
+  // pelo usuário.
   // ---------------------------------------------------------------------
-  var DEDUPE_WINDOW_MS = window.meta_dedupe_window_ms || 2000;
-  var _recentSignatures = {};
-
-  function buildDedupeSignature(eventName, eventModel) {
-    var items = (eventModel && eventModel.items) || [];
-    var ids = items.map(function (item) {
-      return String(firstVariantId(item) || item.item_id);
-    });
-    return [
-      eventName,
-      ids.join(','),
-      eventModel && eventModel.value,
-      eventModel && eventModel.currency
-    ].join('|');
-  }
-
-  function isDuplicateEvent(signature) {
-    var now = Date.now();
-    var last = _recentSignatures[signature];
-    if (last != null && (now - last) < DEDUPE_WINDOW_MS) return true;
-    _recentSignatures[signature] = now;
-    return false;
+  function isEventModelContaminado(eventModel) {
+    return !!(eventModel && (eventModel.eventModel || eventModel.ecommerce));
   }
 
   // Eventos que efetivamente disparam pixel — sujeitos ao dedupe acima.
@@ -411,9 +394,8 @@
     var handler = EVENT_HANDLERS[eventName];
     if (!handler) return;
 
-    var signature = buildDedupeSignature(eventName, eventModel);
-    if (isDuplicateEvent(signature)) {
-      log(eventName + ' | IGNORADO — mesmo evento já processado há pouco (duplicado no dataLayer)', { signature: signature });
+    if (isEventModelContaminado(eventModel)) {
+      log(eventName + ' | IGNORADO — eventModel contaminado (tem ecommerce/eventModel aninhado, resíduo de merge do GTM)', { eventModel: eventModel });
       return;
     }
 
