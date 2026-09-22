@@ -23,6 +23,7 @@
     var serialized;
     try { serialized = JSON.stringify(data); } catch (e) { serialized = '[não serializável: ' + e.message + ']'; }
     console.log('[Meta Pixel] ' + label + ' ->', serialized);
+    persistLogEntry(label, serialized);
   }
 
   function clean(obj) {
