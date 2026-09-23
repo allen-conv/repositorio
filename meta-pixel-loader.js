@@ -70,10 +70,11 @@
     return out;
   }
 
-  function getCookie(name) {
-    var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-    return match ? match[2] : '';
-  }
+  // Nota: fbp/fbc NÃO são lidos/enviados manualmente daqui — o próprio SDK
+  // do Meta (fbevents.js) já lê os cookies _fbp/_fbc do navegador sozinho,
+  // fresquinhos, a cada fbq('track', ...). Mandar isso de novo como
+  // parâmetro customizado só duplica (com risco de usar um valor velho) e
+  // gera alerta de qualidade no Gerenciador de Eventos.
 
   // ---------------------------------------------------------------------
   // fbq base loader (snippet oficial do Meta Pixel)
@@ -274,9 +275,7 @@
       content_ids:  [getProductId(item)],
       content_name: item.item_name,
       value:        eventModel.value,
-      currency:     eventModel.currency || 'BRL',
-      fbp: getCookie('_fbp'),
-      fbc: getCookie('_fbc')
+      currency:     eventModel.currency || 'BRL'
     }, getEventId(eventModel));
   }
 
@@ -297,9 +296,7 @@
       content_name: item.item_name,
       value:        eventModel.value,
       currency:     eventModel.currency || 'BRL',
-      num_items:    item.quantity || 1,
-      fbp: getCookie('_fbp'),
-      fbc: getCookie('_fbc')
+      num_items:    item.quantity || 1
     }, getEventId(eventModel));
   }
 
@@ -317,9 +314,7 @@
       contents:     built.contents,
       num_items:    built.num_items,
       value:        eventModel.value,
-      currency:     eventModel.currency || 'BRL',
-      fbp: getCookie('_fbp'),
-      fbc: getCookie('_fbc')
+      currency:     eventModel.currency || 'BRL'
     }, getEventId(eventModel));
   }
 
@@ -356,9 +351,7 @@
       num_items:    built.num_items,
       value:        eventModel.value,
       currency:     eventModel.currency || 'BRL',
-      order_id:     eventModel.transaction_id,
-      fbp: getCookie('_fbp'),
-      fbc: getCookie('_fbc')
+      order_id:     eventModel.transaction_id
     }, getEventId(eventModel));
   }
 
