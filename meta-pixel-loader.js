@@ -11,7 +11,11 @@
   // injeta quando esse recurso está ativo no Business Manager. Confirme com
   // quem administra a conta antes de ativar: desativa o recurso por inteiro,
   // não só "quando falta event_id".
-  var SKIP_OPENBRIDGE   = window.meta_skip_openbridge   || false;
+  var SKIP_OPENBRIDGE   = window.meta_skip_openbridge   || true;
+  // Flag só pra teste: quando true, NUNCA envia eventID pro fbq, mesmo que
+  // o eventModel traga um. Serve pra comparar o comportamento (dedupe,
+  // event_match_quality, etc.) com e sem eventID. Desligada por padrão.
+  var DISABLE_EVENT_ID  = window.meta_disable_event_id  || true;
 
   if (!PIXEL_ID) {
     console.warn('[meta-pixel-loader] window.meta_pixel_id não definido. Abortando.');
@@ -188,7 +192,7 @@
       log('OpenBridge desativado para este pixel', { pixel_id: PIXEL_ID });
     }
     fbq('track', 'PageView');
-    log('Pixel inicializado', { pixel_id: PIXEL_ID, skip_openbridge: SKIP_OPENBRIDGE });
+    log('Pixel inicializado', { pixel_id: PIXEL_ID, skip_openbridge: SKIP_OPENBRIDGE, disable_event_id: DISABLE_EVENT_ID });
   }
 
   // ---------------------------------------------------------------------
@@ -196,6 +200,7 @@
   // Deixamos duas variações de nome cobertas até confirmarem o campo exato.
   // ---------------------------------------------------------------------
   function getEventId(eventModel) {
+    if (DISABLE_EVENT_ID) return undefined;
     var id = eventModel && (eventModel.event_id || eventModel.eventId);
     if (!id) {
       log('⚠️ event_id ausente no eventModel — dedupe com a CAPI pode falhar', eventModel);
