@@ -11,7 +11,7 @@
   // injeta quando esse recurso está ativo no Business Manager. Confirme com
   // quem administra a conta antes de ativar: desativa o recurso por inteiro,
   // não só "quando falta event_id".
-  var SKIP_OPENBRIDGE   = window.meta_skip_openbridge   || true;
+  var SKIP_OPENBRIDGE   = window.meta_skip_openbridge   || false;
   // Flag só pra teste: quando true, NUNCA envia eventID pro fbq, mesmo que
   // o eventModel traga um. Serve pra comparar o comportamento (dedupe,
   // event_match_quality, etc.) com e sem eventID. Desligada por padrão.
