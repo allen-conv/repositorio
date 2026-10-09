@@ -5,13 +5,27 @@ on:
     branches:
       - main
     paths:
-      - 'meta-pixel-loader.js'
+      - '**.js'
+  workflow_dispatch: {} 
 
 jobs:
   purge:
     runs-on: ubuntu-latest
     steps:
-      - name: Purge jsDelivr cache for @main
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Purge jsDelivr cache (@main) dos .js alterados
         run: |
-          curl -s "https://purge.jsdelivr.net/gh/${{ github.repository }}@main/meta-pixel-loader.js"
-          echo "Purge solicitado para meta-pixel-loader.js@main"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            FILES=$(git ls-files '*.js')                       # manual: limpa todos
+          else
+            FILES=$(git diff --name-only HEAD~1 HEAD -- '*.js') # push: só os alterados
+          fi
+
+          for f in $FILES; do
+            URL="https://purge.jsdelivr.net/gh/${{ github.repository }}@main/$f"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+            echo "Purge $f -> HTTP $STATUS"
+          done
