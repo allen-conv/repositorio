@@ -6,16 +6,8 @@
 
   var PIXEL_ID          = window.meta_pixel_id          || '';
   var DEBUG             = window.meta_debug             || false;
-  // Desliga o OpenBridge (Conversions API Gateway) para este pixel — opcional.
-  // Isso evita o eid automático "ob3_plugin_set_..." que o próprio fbevents.js
-  // injeta quando esse recurso está ativo no Business Manager. Confirme com
-  // quem administra a conta antes de ativar: desativa o recurso por inteiro,
-  // não só "quando falta event_id".
   var SKIP_OPENBRIDGE   = window.meta_skip_openbridge   || false;
-  // Flag só pra teste: quando true, NUNCA envia eventID pro fbq, mesmo que
-  // o eventModel traga um. Serve pra comparar o comportamento (dedupe,
-  // event_match_quality, etc.) com e sem eventID. Desligada por padrão.
-  var DISABLE_EVENT_ID  = window.meta_disable_event_id  || true;
+  var DISABLE_EVENT_ID  = window.meta_disable_event_id === true;
 
   if (!PIXEL_ID) {
     console.warn('[meta-pixel-loader] window.meta_pixel_id não definido. Abortando.');
