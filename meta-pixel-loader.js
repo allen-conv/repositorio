@@ -1,3 +1,4 @@
+/*
 (function () {
   'use strict';
 
@@ -38,7 +39,7 @@
       buf.push({ t: new Date().toISOString(), url: location.href, label: label, data: serialized });
       if (buf.length > DEBUG_LOG_LIMIT) buf = buf.slice(buf.length - DEBUG_LOG_LIMIT);
       sessionStorage.setItem(DEBUG_LOG_KEY, JSON.stringify(buf));
-    } catch (e) { /* sessionStorage indisponível — ignora, não quebra o resto */ }
+    } catch (e) {}
   }
 
   window.meta_pixel_debug_dump = function () {
