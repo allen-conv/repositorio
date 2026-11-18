@@ -32,8 +32,8 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 
   await wait(400);
   let s = w.cvtUserData.get();
-  assert.strictEqual(s.h.em, sha('legacy@test.com'), 'legado email');
-  assert.strictEqual(s.h.ph, sha('5554996339814'), 'legado phone');
+  assert.strictEqual(s.hashed.email, sha('legacy@test.com'), 'legado email');
+  assert.strictEqual(s.hashed.phone, sha('5554996339814'), 'legado phone');
   assert.ok(!w.localStorage.getItem('meta_user_data'), 'legado removido');
   assert.ok(!JSON.stringify(s).includes('01353849074') && !JSON.stringify(s).includes(sha('01353849074')), 'sem CPF');
 
@@ -45,43 +45,46 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   set('cep', '88372-502'); set('celular', '(47) 99999-8888');
   await wait(400);
   s = w.cvtUserData.get();
-  assert.strictEqual(s.h.em, sha('maria@exemplo.com.br'));
-  assert.strictEqual(s.h.fn, sha('maria'));
-  assert.strictEqual(s.h.ln, sha('clara souza'));
-  assert.strictEqual(s.h.ph, sha('5547999998888'));
-  assert.strictEqual(s.h.ph_e164, sha('+5547999998888'));
-  assert.strictEqual(s.g.postal_code, '88372502');
+  assert.strictEqual(s.hashed.email, sha('maria@exemplo.com.br'));
+  assert.strictEqual(s.hashed.first_name, sha('maria'));
+  assert.strictEqual(s.hashed.last_name, sha('clara souza'));
+  assert.strictEqual(s.hashed.phone, sha('5547999998888'));
+  assert.strictEqual(s.hashed.phone_e164, sha('+5547999998888'));
+  assert.strictEqual(s.plain.postal_code, '88372502');
   const raw = w.localStorage.getItem('cvt_ud');
   ['111.222.333-44', '11122233344', 'segredo123', 'maria@', 'Rua X', 'Maria'].forEach(x => assert.ok(!raw.includes(x), 'vazou ' + x));
 
   // username com CPF não vira email
   const u = f.querySelector('[name="username"]'); u.value = '12345678900'; u.dispatchEvent(new w.Event('focusout', { bubbles: true }));
   await wait(300);
-  assert.strictEqual(w.cvtUserData.get().h.em, sha('maria@exemplo.com.br'));
+  assert.strictEqual(w.cvtUserData.get().hashed.email, sha('maria@exemplo.com.br'));
 
   // checkout API
   await w.fetch('/checkout-api/auth/customers/me');
   await wait(400);
   s = w.cvtUserData.get();
-  assert.strictEqual(s.h.em, sha('joao.silva@gmail.com'));
-  assert.strictEqual(s.h.em_g, sha('joaosilva@gmail.com'));
-  assert.strictEqual(s.h.fn, sha('joão'));
-  assert.strictEqual(s.h.external_id, sha('98765'));
-  assert.strictEqual(s.h.ct, sha('sãopaulo'));
-  assert.strictEqual(s.g.city, 'são paulo');
-  assert.strictEqual(s.g.region, 'SP');
+  assert.strictEqual(s.hashed.email, sha('joao.silva@gmail.com'));
+  assert.strictEqual(s.hashed.email_gmail, sha('joaosilva@gmail.com'));
+  assert.strictEqual(s.hashed.first_name, sha('joão'));
+  assert.strictEqual(s.hashed.customer_id, sha('98765'));
+  assert.strictEqual(s.hashed.city, sha('sãopaulo'));
+  assert.strictEqual(s.plain.city, 'são paulo');
+  assert.strictEqual(s.plain.region, 'sp');
   assert.ok(!JSON.stringify(s).includes(sha('12345678900')));
 
   // dataLayer nativo (gtag event com customer)
   w.dataLayer.push({ event: 'purchase', eventModel: { customer: { email: 'dl@teste.com', phone: '11988887777' } }, items: [{ name: 'Tênis', price: 10 }] });
   await wait(400);
-  assert.strictEqual(w.cvtUserData.get().h.em, sha('dl@teste.com'));
+  assert.strictEqual(w.cvtUserData.get().hashed.email, sha('dl@teste.com'));
 
-  const g = w.cvtUserData.google();
-  assert.ok(g.sha256_email_address && g.sha256_phone_number && g.address.sha256_first_name);
-  assert.ok(gtagCalls.some(c => c[0] === 'set' && c[1] === 'user_data'));
-  assert.ok(w.dataLayer.some(e => e.event === 'cvt_user_data'));
-  console.log('meta()', w.cvtUserData.meta());
-  console.log('google()', JSON.stringify(g));
+  // não envia nada: sem gtag, sem push no dataLayer, sem formatos por plataforma
+  assert.strictEqual(gtagCalls.length, 0, 'não deve chamar gtag');
+  assert.ok(!w.dataLayer.some(e => e.event === 'cvt_user_data'), 'não deve fazer push');
+  ['google','meta','tiktok','pinterest'].forEach(f => assert.ok(!(f in w.cvtUserData), 'sem ' + f));
+  let got = null; w.cvtUserData.onChange(st => got = st);
+  w.cvtUserData.ingest({ email: 'novo@x.com' }, 'manual'); await wait(400);
+  assert.strictEqual(got.hashed.email, sha('novo@x.com'));
+  assert.strictEqual(JSON.parse(w.localStorage.getItem('cvt_ud')).v, 2);
+  console.log(JSON.stringify(w.cvtUserData.get()));
   console.log('ALL TESTS PASSED:', file.split('/').pop());
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

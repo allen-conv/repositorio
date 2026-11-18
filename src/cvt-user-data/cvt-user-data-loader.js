@@ -1,15 +1,15 @@
 /*!
- * cvt-user-data-loader v1.0.0 — Convertr / Performance
- * Captura dados fornecidos pelo próprio usuário durante a navegação (formulários,
- * dataLayer nativo e API da loja/checkout), normaliza, aplica SHA-256 e guarda no
- * localStorage para reaproveitar em Google Ads/GA4 (conversões otimizadas),
- * Meta (Advanced Matching / CAPI), Pinterest, TikTok etc.
+ * cvt-user-data-loader v1.1.0 — Convertr / Performance
+ * SOMENTE captura, padroniza e armazena os dados fornecidos pelo próprio usuário
+ * durante a navegação (formulários, dataLayer nativo e API da loja/checkout).
+ * Os dados ficam em localStorage ("cvt_ud") com hash SHA-256. Este script NÃO envia
+ * nada para nenhuma plataforma: o uso fica a cargo de outros scripts / tags do GTM.
  *
  * NÃO captura nem guarda: CPF/CNPJ, RG, data de nascimento, senha, cartão, rua/número,
  * e nunca grava e-mail/telefone/nome em texto puro.
  *
  * Configuração opcional ANTES do script:
- *   window.cvtUDConfig = { ttlDays: 180, autoGtag: true, purgeLegacy: false, debug: false };
+ *   window.cvtUDConfig = { ttlDays: 180, purgeLegacy: false, debug: false };
  */
 (function (w, d) {
   'use strict';
@@ -18,7 +18,6 @@
   var CFG = w.cvtUDConfig || {};
   var KEY = CFG.storageKey || 'cvt_ud';
   var TTL = (CFG.ttlDays || 180) * 864e5;
-  var AUTO_GTAG = CFG.autoGtag !== false;
   var DEBUG = !!CFG.debug;
   var DL_NAME = CFG.dataLayerName || 'dataLayer';
   var COUNTRY = (CFG.defaultCountry || 'br').toLowerCase();
@@ -32,11 +31,13 @@
   function load() {
     try {
       var o = JSON.parse(localStorage.getItem(KEY) || 'null');
-      if (o && o.exp && o.exp < Date.now()) { localStorage.removeItem(KEY); return null; }
+      if (!o || o.v !== 2) return null;
+      if (o.expires_at && o.expires_at < Date.now()) { localStorage.removeItem(KEY); return null; }
       return o;
     } catch (e) { return null; }
   }
-  var state = load() || { v: 1, h: {}, g: {} };
+  function empty() { return { v: 2, hashed: {}, plain: {} }; }
+  var state = load() || empty();
 
   /* ---------------- SHA-256 ---------------- */
   var subtle = w.crypto && w.crypto.subtle;
@@ -137,88 +138,66 @@
     timer = setTimeout(flush, 250);
   }
 
+  /*
+   * Esquema salvo em localStorage["cvt_ud"]:
+   * {
+   *   v: 2, updated_at: <ms>, expires_at: <ms>,
+   *   hashed: {                       // SHA-256 hex do valor normalizado
+   *     email,                        // "maria@exemplo.com"
+   *     email_gmail,                  // só gmail/googlemail: sem pontos antes do @
+   *     phone,                        // só dígitos com DDI: "5547999998888"
+   *     phone_e164,                   // "+5547999998888"
+   *     first_name, last_name,        // minúsculas, sem pontuação, com acentos
+   *     city,                         // minúsculas, sem espaços: "são paulo" -> "sãopaulo"
+   *     region,                       // UF minúscula: "sp"
+   *     postal_code,                  // 8 dígitos
+   *     country,                      // "br"
+   *     customer_id                   // ID do cliente na loja (quando logado)
+   *   },
+   *   plain: { city, region, postal_code, country }   // não sensíveis, normalizados
+   * }
+   */
   function flush() {
     var p = pending; pending = {};
     var jobs = [], h = {}, g = {};
     function H(field, value) { jobs.push(sha256(value).then(function (r) { h[field] = r; })); }
 
     if (p.email) {
-      H('em', p.email);
-      // Google: remove pontos antes do @ em gmail/googlemail
+      H('email', p.email);
       var m = p.email.match(/^([^@]+)@(gmail|googlemail)\.com$/);
-      if (m) H('em_g', m[1].replace(/\./g, '') + '@' + m[2] + '.com');
+      if (m) H('email_gmail', m[1].replace(/\./g, '') + '@' + m[2] + '.com');
     }
-    if (p.phone) { H('ph', p.phone); H('ph_e164', '+' + p.phone); }
-    if (p.first_name) H('fn', p.first_name);
-    if (p.last_name) H('ln', p.last_name);
-    if (p.city) { H('ct', p.city.replace(/[^a-zà-ÿ]/g, '')); g.city = p.city; }
-    if (p.region) { H('st', p.region); g.region = p.region.toUpperCase(); }
-    if (p.zip) { H('zp', p.zip); g.postal_code = p.zip; }
-    var country = p.country || (state.g.country ? '' : COUNTRY);
-    if (country) { H('country', country); g.country = country.toUpperCase(); }
-    if (p.customer_id) H('external_id', p.customer_id);
+    if (p.phone) { H('phone', p.phone); H('phone_e164', '+' + p.phone); }
+    if (p.first_name) H('first_name', p.first_name);
+    if (p.last_name) H('last_name', p.last_name);
+    if (p.city) { H('city', p.city.replace(/[^a-z\u00e0-\u00ff]/g, '')); g.city = p.city; }
+    if (p.region) { H('region', p.region); g.region = p.region; }
+    if (p.zip) { H('postal_code', p.zip); g.postal_code = p.zip; }
+    var country = p.country || (state.plain.country ? '' : COUNTRY);
+    if (country) { H('country', country); g.country = country; }
+    if (p.customer_id) H('customer_id', p.customer_id);
 
     Promise.all(jobs).then(function () {
       var changed = false, k;
-      for (k in h) if (state.h[k] !== h[k]) { state.h[k] = h[k]; changed = true; }
-      for (k in g) if (state.g[k] !== g[k]) { state.g[k] = g[k]; changed = true; }
-      if (h.em && !h.em_g) delete state.h.em_g; // e-mail novo não-gmail substitui o anterior
+      if (h.email && !h.email_gmail && state.hashed.email_gmail) { delete state.hashed.email_gmail; changed = true; }
+      for (k in h) if (state.hashed[k] !== h[k]) { state.hashed[k] = h[k]; changed = true; }
+      for (k in g) if (state.plain[k] !== g[k]) { state.plain[k] = g[k]; changed = true; }
       if (!changed) return;
-      state.v = 1; state.ts = Date.now(); state.exp = state.ts + TTL;
+      state.v = 2; state.updated_at = Date.now(); state.expires_at = state.updated_at + TTL;
       try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
-      publish();
+      for (var i = 0; i < listeners.length; i++) { try { listeners[i](api.get()); } catch (e) {} }
     });
   }
 
-  /* ---------------- saídas por plataforma ---------------- */
+  /* ---------------- leitura (o uso é responsabilidade de outros scripts/tags) ---------------- */
   var api = {
     get: function () { return JSON.parse(JSON.stringify(state)); },
-    has: function () { return !!(state.h.em || state.h.ph); },
-    // gtag('set','user_data', ...) / variável "Dados fornecidos pelo usuário" (código)
-    google: function () {
-      var h = state.h, g = state.g, o = {};
-      if (h.em_g || h.em) o.sha256_email_address = h.em_g || h.em;
-      if (h.ph_e164) o.sha256_phone_number = h.ph_e164;
-      var a = {};
-      if (h.fn) a.sha256_first_name = h.fn;
-      if (h.ln) a.sha256_last_name = h.ln;
-      if (g.city) a.city = g.city;
-      if (g.region) a.region = g.region;
-      if (g.postal_code) a.postal_code = g.postal_code;
-      if (g.country) a.country = g.country;
-      if (Object.keys(a).length && (a.sha256_first_name || a.postal_code)) o.address = a;
-      return Object.keys(o).length ? o : undefined;
-    },
-    // fbq('init', PIXEL, cvtUserData.meta()) e CAPI (user_data)
-    meta: function () {
-      var h = state.h, o = {}, k = ['em', 'ph', 'fn', 'ln', 'ct', 'st', 'zp', 'country', 'external_id'];
-      for (var i = 0; i < k.length; i++) if (h[k[i]]) o[k[i]] = h[k[i]];
-      return Object.keys(o).length ? o : undefined;
-    },
-    // pintrk('load', TAG_ID, {em: ...})  /  pintrk('set', {em: ...})
-    pinterest: function () { return state.h.em ? { em: state.h.em } : undefined; },
-    // ttq.identify(cvtUserData.tiktok())
-    tiktok: function () {
-      var h = state.h, o = {};
-      if (h.em) o.email = h.em;
-      if (h.ph_e164) o.phone_number = h.ph_e164;
-      if (h.external_id) o.external_id = h.external_id;
-      return Object.keys(o).length ? o : undefined;
-    },
-    onChange: function (fn) { if (typeof fn === 'function') { listeners.push(fn); if (api.has()) fn(api); } },
-    ingest: ingest, // uso manual: cvtUserData.ingest({email:'...', phone:'...'}, 'manual')
-    clear: function () { state = { v: 1, h: {}, g: {} }; try { localStorage.removeItem(KEY); } catch (e) {} },
-    version: '1.0.0'
+    has: function () { return !!(state.hashed.email || state.hashed.phone); },
+    onChange: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
+    ingest: ingest, // captura manual: cvtUserData.ingest({email:'...', phone:'...'}, 'manual')
+    clear: function () { state = empty(); try { localStorage.removeItem(KEY); } catch (e) {} },
+    version: '1.1.0'
   };
-
-  function publish() {
-    var dl = w[DL_NAME] = w[DL_NAME] || [];
-    dl.push({ event: 'cvt_user_data', cvt_user_data: { google: api.google(), meta: api.meta(), tiktok: api.tiktok(), pinterest: api.pinterest() } });
-    if (AUTO_GTAG && typeof w.gtag === 'function' && api.google()) {
-      try { w.gtag('set', 'user_data', api.google()); } catch (e) {}
-    }
-    for (var i = 0; i < listeners.length; i++) { try { listeners[i](api); } catch (e) {} }
-  }
 
   /* ---------------- fonte 1: objetos (dataLayer / API / legado) ---------------- */
   var ALIAS = {
@@ -269,7 +248,7 @@
     var dl = w[DL_NAME] = w[DL_NAME] || [];
     function handle(entry) {
       try {
-        if (!entry || entry.event === 'cvt_user_data') return;
+        if (!entry) return;
         // gtag('event', ..., {customer:{...}}) chega como Arguments
         if (entry.length && typeof entry[0] === 'string' && entry[2]) scan(entry[2], 'gtag', 0, false);
         else scan(entry, 'dataLayer', 0, false);
@@ -426,6 +405,5 @@
   try { hookXHR(); } catch (e) {}
   try { hookForms(); } catch (e) {}
   try { migrateLegacy(); } catch (e) {}
-  if (api.has()) publish(); // reaproveita o que já estava salvo logo no carregamento
   log('ready', api.has() ? 'com dados' : 'vazio');
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);
