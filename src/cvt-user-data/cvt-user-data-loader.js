@@ -1,5 +1,5 @@
 /*!
- * cvt-user-data-loader v1.1.0 — Convertr / Performance
+ * cvt-user-data-loader v1.1.1 — Convertr / Performance
  * SOMENTE captura, padroniza e armazena os dados fornecidos pelo próprio usuário
  * durante a navegação (formulários, dataLayer nativo e API da loja/checkout).
  * Os dados ficam em localStorage ("cvt_ud") com hash SHA-256. Este script NÃO envia
@@ -196,7 +196,7 @@
     onChange: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
     ingest: ingest, // captura manual: cvtUserData.ingest({email:'...', phone:'...'}, 'manual')
     clear: function () { state = empty(); try { localStorage.removeItem(KEY); } catch (e) {} },
-    version: '1.1.0'
+    version: '1.1.1'
   };
 
   /* ---------------- fonte 1: objetos (dataLayer / API / legado) ---------------- */
@@ -355,6 +355,8 @@
     if (/(^|\s)name$/.test(ac)) return 'full_name';
     if (/address-level2/.test(ac)) return 'city';
     if (/address-level1/.test(ac)) return 'region';
+    // campos mistos "CPF ou e-mail" / login: só vira e-mail se o valor digitado for e-mail
+    if (/e-?mail|user|login/.test(desc) && RE_EMAIL.test(str(el.value))) return 'email';
     if (BLOCK_FIELD.test(desc)) return null;
     for (var i = 0; i < FIELD.length; i++) if (FIELD[i][1].test(desc)) return FIELD[i][0];
     // campo de login "username": só se o valor for e-mail

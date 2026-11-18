@@ -12,7 +12,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     <form id="f">
       <input name="newsletter4081:name" placeholder="Seu nome">
       <input name="newsletter4081:email" placeholder="Seu e-mail">
-      <input id="login-username" name="username">
+      <label for="login-username">CPF ou e-mail</label><input id="login-username" name="username">
       <input name="cpf" placeholder="CPF">
       <input type="password" name="password">
       <input type="tel" name="cep" placeholder="Digite seu CEP">
@@ -58,6 +58,10 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   const u = f.querySelector('[name="username"]'); u.value = '12345678900'; u.dispatchEvent(new w.Event('focusout', { bubbles: true }));
   await wait(300);
   assert.strictEqual(w.cvtUserData.get().hashed.email, sha('maria@exemplo.com.br'));
+  // mesmo campo "CPF ou e-mail" com e-mail digitado: deve capturar
+  u.value = 'Login@Exemplo.com'; u.dispatchEvent(new w.Event('focusout', { bubbles: true }));
+  await wait(300);
+  assert.strictEqual(w.cvtUserData.get().hashed.email, sha('login@exemplo.com'), 'login CPF ou e-mail');
 
   // checkout API
   await w.fetch('/checkout-api/auth/customers/me');
