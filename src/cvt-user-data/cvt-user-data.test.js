@@ -3,7 +3,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const assert = require('assert');
 const sha = s => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
-const file = process.argv[2] || __dirname + '/../src/cvt-user-data/cvt-user-data-loader.js';
+const file = process.argv[2] || __dirname + '/cvt-user-data-loader.js';
 const code = fs.readFileSync(file, 'utf8');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 

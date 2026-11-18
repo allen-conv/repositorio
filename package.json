@@ -2,10 +2,12 @@
   "name": "convertr-scripts",
   "version": "1.0.0",
   "private": true,
-  "description": "Scripts compartilhados das lojas Convertr (servidos via jsDelivr @main)",
+  "description": "Loaders internos da Convertr para as lojas (servidos via jsDelivr @main)",
   "scripts": {
-    "build": "terser src/cvt-user-data/cvt-user-data-loader.js -c -m --comments \"/^!/\" -o cvt-user-data-loader.min.js",
-    "test": "node test/cvt-user-data.test.js src/cvt-user-data/cvt-user-data-loader.js && node test/cvt-user-data.test.js cvt-user-data-loader.min.js",
+    "build": "npm run build:cvt-user-data",
+    "build:cvt-user-data": "terser src/cvt-user-data/cvt-user-data-loader.js -c -m --comments \"/^!/\" -o cvt-user-data-loader.min.js",
+    "test": "npm run test:cvt-user-data",
+    "test:cvt-user-data": "node src/cvt-user-data/cvt-user-data.test.js src/cvt-user-data/cvt-user-data-loader.js && node src/cvt-user-data/cvt-user-data.test.js cvt-user-data-loader.min.js",
     "ci": "npm run build && npm test"
   },
   "devDependencies": {

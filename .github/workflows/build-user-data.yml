@@ -9,13 +9,11 @@ on:
     branches: [main]
     paths:
       - 'src/cvt-user-data/**'
-      - 'test/cvt-user-data.test.js'
       - 'package.json'
       - 'package-lock.json'
   pull_request:
     paths:
       - 'src/cvt-user-data/**'
-      - 'test/cvt-user-data.test.js'
   workflow_dispatch: {}
 
 permissions:
