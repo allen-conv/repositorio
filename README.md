@@ -18,7 +18,7 @@ https://cdn.jsdelivr.net/gh/allen-conv/repositorio@main/<arquivo>
 
 | Arquivo (raiz) | O que faz | Configuração na loja | Doc |
 |---|---|---|---|
-| `cvt-user-data-loader.min.js` | Captura, padroniza e armazena (SHA-256) os dados que o cliente informa. Não envia nada. | `window.cvtUDConfig` (opcional) | [cvt-user-data](docs/loaders/cvt-user-data.md) |
+| `cvt-user-data-loader.min.js` | Captura, padroniza e armazena os dados que o cliente informa (legíveis + SHA-256; localStorage com aceite, sessionStorage sem). Não envia nada. | `window.cvtUDConfig` (opcional) | [cvt-user-data](docs/loaders/cvt-user-data.md) |
 | `edrone-loader.min.js` | Integração com a Edrone | `edrone_app_id`, `edrone_store_id`, `edrone_debug` | [edrone](docs/loaders/edrone.md) |
 | `google-ads.js` | Ponte de conversões do Google Ads a partir do dataLayer | `GADS_CONFIG = { conversionId, sendTo, debug }` | [google-ads](docs/loaders/google-ads.md) |
 | `merchant_reviews.js` | Opt-in de avaliações do Google (Merchant Center) | `merchant_id` | [merchant-reviews](docs/loaders/merchant-reviews.md) |

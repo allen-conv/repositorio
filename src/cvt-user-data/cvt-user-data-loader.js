@@ -1,15 +1,20 @@
 /*!
- * cvt-user-data-loader v1.1.1 — Convertr / Performance
+ * cvt-user-data-loader v2.0.0 — Convertr / Performance
  * SOMENTE captura, padroniza e armazena os dados fornecidos pelo próprio usuário
  * durante a navegação (formulários, dataLayer nativo e API da loja/checkout).
- * Os dados ficam em localStorage ("cvt_ud") com hash SHA-256. Este script NÃO envia
- * nada para nenhuma plataforma: o uso fica a cargo de outros scripts / tags do GTM.
+ * NÃO envia nada para nenhuma plataforma: o uso fica a cargo de outros scripts / tags do GTM.
  *
- * NÃO captura nem guarda: CPF/CNPJ, RG, data de nascimento, senha, cartão, rua/número,
- * e nunca grava e-mail/telefone/nome em texto puro.
+ * Onde grava (chave "cvt_ud"):
+ *   - com consentimento às políticas do site  -> localStorage   (reaproveitado em sessões futuras)
+ *   - sem consentimento                       -> sessionStorage (só a sessão atual)
+ *   Se o consentimento vier depois, os dados da sessão passam para o localStorage.
+ *   Se o consentimento expirar/for retirado, os dados saem do localStorage e voltam para a sessão.
+ *
+ * NÃO captura nem guarda: CPF/CNPJ, RG, data de nascimento, senha, cartão, rua/número/complemento/bairro.
  *
  * Configuração opcional ANTES do script:
- *   window.cvtUDConfig = { ttlDays: 180, purgeLegacy: false, debug: false };
+ *   window.cvtUDConfig = { ttlDays: 180, consent: 'auto', purgeLegacy: false, debug: false };
+ *   consent: 'auto' (banner LGPD da Convertr ou Consent Mode do Google), true, false ou function(){ return boolean; }
  */
 (function (w, d) {
   'use strict';
@@ -17,27 +22,105 @@
 
   var CFG = w.cvtUDConfig || {};
   var KEY = CFG.storageKey || 'cvt_ud';
+  var CONSENT_KEY = 'cvt_consent';
   var TTL = (CFG.ttlDays || 180) * 864e5;
   var DEBUG = !!CFG.debug;
   var DL_NAME = CFG.dataLayerName || 'dataLayer';
   var COUNTRY = (CFG.defaultCountry || 'br').toLowerCase();
   var DDI = CFG.defaultDDI || '55';
+  var CONSENT_CFG = CFG.consent == null ? 'auto' : CFG.consent;
   // Chaves antigas em texto puro (tentativas anteriores via GTM / tema)
   var LEGACY = CFG.legacyKeys || ['user_data', 'meta_user_data'];
 
   function log() { if (DEBUG && w.console) console.log.apply(console, ['[cvt-ud]'].concat([].slice.call(arguments))); }
+  function lsGet(st, k) { try { return w[st].getItem(k); } catch (e) { return null; } }
+  function lsSet(st, k, v) { try { w[st].setItem(k, v); } catch (e) {} }
+  function lsDel(st, k) { try { w[st].removeItem(k); } catch (e) {} }
+
+  /* ---------------- consentimento ---------------- */
+  // Banner LGPD da Convertr: o tema (Nuxt) guarda o aceite em $store.state.lgpd.lgpd.expire_at.
+  // O checkout é outro app e não tem esse estado, por isso o aceite visto na loja é marcado em
+  // localStorage["cvt_consent"] = {"granted":true,"expire_at":<ms>} e lido nas outras páginas.
+  function nuxtConsent() {
+    try {
+      var st = w.$nuxt && w.$nuxt.$store && w.$nuxt.$store.state;
+      if (!st || !st.lgpd || !st.lgpd.lgpd || !('expire_at' in st.lgpd.lgpd)) return null; // sem banner Convertr aqui
+      var exp = st.lgpd.lgpd.expire_at;
+      if (!exp) return { granted: false };
+      var t = typeof exp === 'number' ? exp : Date.parse(exp);
+      if (!t || isNaN(t)) t = Date.now() + 365 * 864e5;
+      if (t < 1e12) t = t * 1000; // segundos -> ms
+      return { granted: t > Date.now(), expire_at: t };
+    } catch (e) { return null; }
+  }
+  function consentModeGranted() {
+    try {
+      var dl = w[DL_NAME] || [], v = null;
+      for (var i = 0; i < dl.length; i++) {
+        var e = dl[i];
+        if (e && e[0] === 'consent' && e[2] && typeof e[2] === 'object') {
+          var x = e[2].ad_user_data || e[2].ad_storage;
+          if (x) v = x === 'granted';
+        }
+      }
+      return v; // null = Consent Mode não usado
+    } catch (e) { return null; }
+  }
+  function hasConsent() {
+    if (typeof CONSENT_CFG === 'function') { try { return !!CONSENT_CFG(); } catch (e) { return false; } }
+    if (CONSENT_CFG === true || CONSENT_CFG === false) return CONSENT_CFG;
+    var n = nuxtConsent();
+    if (n) {
+      if (n.granted) lsSet('localStorage', CONSENT_KEY, JSON.stringify({ granted: true, expire_at: n.expire_at }));
+      else lsDel('localStorage', CONSENT_KEY);
+      return n.granted;
+    }
+    var cm = consentModeGranted();
+    if (cm !== null) return cm;
+    try { var m = JSON.parse(lsGet('localStorage', CONSENT_KEY) || 'null'); if (m && m.granted && (!m.expire_at || m.expire_at > Date.now())) return true; } catch (e) {}
+    return false;
+  }
 
   /* ---------------- storage ---------------- */
-  function load() {
+  function read(st) {
     try {
-      var o = JSON.parse(localStorage.getItem(KEY) || 'null');
-      if (!o || o.v !== 2) return null;
-      if (o.expires_at && o.expires_at < Date.now()) { localStorage.removeItem(KEY); return null; }
+      var o = JSON.parse(lsGet(st, KEY) || 'null');
+      if (o && o.v !== 3) { lsDel(st, KEY); return null; } // formato antigo (v1/v2): descarta
+      if (!o) return null;
+      if (o.expires_at && o.expires_at < Date.now()) { lsDel(st, KEY); return null; }
       return o;
     } catch (e) { return null; }
   }
-  function empty() { return { v: 2, hashed: {}, plain: {} }; }
+  function empty() { return { v: 3, consent: false, storage: 'session', data: {}, hashed: {} }; }
+  function load() {
+    var l = read('localStorage'), s = read('sessionStorage');
+    if (l && s) { // junta: o mais recente prevalece
+      var a = l.updated_at > s.updated_at ? s : l, b = a === l ? s : l, k;
+      for (k in b.data) a.data[k] = b.data[k];
+      for (k in b.hashed) a.hashed[k] = b.hashed[k];
+      a.updated_at = Math.max(l.updated_at, s.updated_at);
+      return a;
+    }
+    return l || s;
+  }
   var state = load() || empty();
+  var consent = false;
+
+  // grava no lugar certo conforme o consentimento e limpa o outro
+  function persist() {
+    consent = hasConsent();
+    if (!state.updated_at) return; // nada captado ainda
+    state.consent = consent;
+    state.storage = consent ? 'local' : 'session';
+    var json = JSON.stringify(state);
+    if (consent) { lsSet('localStorage', KEY, json); lsDel('sessionStorage', KEY); }
+    else { lsSet('sessionStorage', KEY, json); lsDel('localStorage', KEY); }
+  }
+  // reavalia o consentimento e move os dados se ele mudou
+  function recheck() {
+    var before = consent, now = hasConsent();
+    if (now !== before) { log('consentimento', now ? 'concedido' : 'ausente', '-> ' + (now ? 'localStorage' : 'sessionStorage')); persist(); }
+  }
 
   /* ---------------- SHA-256 ---------------- */
   var subtle = w.crypto && w.crypto.subtle;
@@ -139,52 +222,53 @@
   }
 
   /*
-   * Esquema salvo em localStorage["cvt_ud"]:
+   * Esquema salvo em localStorage ou sessionStorage ["cvt_ud"]:
    * {
-   *   v: 2, updated_at: <ms>, expires_at: <ms>,
-   *   hashed: {                       // SHA-256 hex do valor normalizado
-   *     email,                        // "maria@exemplo.com"
-   *     email_gmail,                  // só gmail/googlemail: sem pontos antes do @
-   *     phone,                        // só dígitos com DDI: "5547999998888"
-   *     phone_e164,                   // "+5547999998888"
-   *     first_name, last_name,        // minúsculas, sem pontuação, com acentos
-   *     city,                         // minúsculas, sem espaços: "são paulo" -> "sãopaulo"
-   *     region,                       // UF minúscula: "sp"
-   *     postal_code,                  // 8 dígitos
-   *     country,                      // "br"
-   *     customer_id                   // ID do cliente na loja (quando logado)
+   *   v: 3, updated_at: <ms>, expires_at: <ms>,
+   *   consent: true|false, storage: "local"|"session",
+   *   data: {                         // valores padronizados, legíveis
+   *     email: "maria@exemplo.com",
+   *     phone: "5547999998888",       // só dígitos com DDI
+   *     phone_e164: "+5547999998888",
+   *     first_name: "maria", last_name: "clara souza",
+   *     city: "são paulo", region: "sp", postal_code: "01310100", country: "br",
+   *     customer_id: "98765"
    *   },
-   *   plain: { city, region, postal_code, country }   // não sensíveis, normalizados
+   *   hashed: {                       // SHA-256 hex, no formato pedido pelas plataformas de anúncio
+   *     email, email_gmail (gmail sem pontos), phone, phone_e164, first_name, last_name,
+   *     city (sem espaços), region, postal_code, country, customer_id
+   *   }
    * }
    */
   function flush() {
     var p = pending; pending = {};
-    var jobs = [], h = {}, g = {};
+    var jobs = [], h = {}, v = {};
     function H(field, value) { jobs.push(sha256(value).then(function (r) { h[field] = r; })); }
 
     if (p.email) {
-      H('email', p.email);
+      v.email = p.email; H('email', p.email);
       var m = p.email.match(/^([^@]+)@(gmail|googlemail)\.com$/);
       if (m) H('email_gmail', m[1].replace(/\./g, '') + '@' + m[2] + '.com');
     }
-    if (p.phone) { H('phone', p.phone); H('phone_e164', '+' + p.phone); }
-    if (p.first_name) H('first_name', p.first_name);
-    if (p.last_name) H('last_name', p.last_name);
-    if (p.city) { H('city', p.city.replace(/[^a-z\u00e0-\u00ff]/g, '')); g.city = p.city; }
-    if (p.region) { H('region', p.region); g.region = p.region; }
-    if (p.zip) { H('postal_code', p.zip); g.postal_code = p.zip; }
-    var country = p.country || (state.plain.country ? '' : COUNTRY);
-    if (country) { H('country', country); g.country = country; }
-    if (p.customer_id) H('customer_id', p.customer_id);
+    if (p.phone) { v.phone = p.phone; v.phone_e164 = '+' + p.phone; H('phone', p.phone); H('phone_e164', '+' + p.phone); }
+    if (p.first_name) { v.first_name = p.first_name; H('first_name', p.first_name); }
+    if (p.last_name) { v.last_name = p.last_name; H('last_name', p.last_name); }
+    if (p.city) { v.city = p.city; H('city', p.city.replace(/[^a-zà-ÿ]/g, '')); }
+    if (p.region) { v.region = p.region; H('region', p.region); }
+    if (p.zip) { v.postal_code = p.zip; H('postal_code', p.zip); }
+    var country = p.country || (state.data.country ? '' : COUNTRY);
+    if (country) { v.country = country; H('country', country); }
+    if (p.customer_id) { v.customer_id = p.customer_id; H('customer_id', p.customer_id); }
 
     Promise.all(jobs).then(function () {
       var changed = false, k;
       if (h.email && !h.email_gmail && state.hashed.email_gmail) { delete state.hashed.email_gmail; changed = true; }
+      for (k in v) if (state.data[k] !== v[k]) { state.data[k] = v[k]; changed = true; }
       for (k in h) if (state.hashed[k] !== h[k]) { state.hashed[k] = h[k]; changed = true; }
-      for (k in g) if (state.plain[k] !== g[k]) { state.plain[k] = g[k]; changed = true; }
       if (!changed) return;
-      state.v = 2; state.updated_at = Date.now(); state.expires_at = state.updated_at + TTL;
-      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+      state.v = 3; state.updated_at = Date.now(); state.expires_at = state.updated_at + TTL;
+      persist();
+      log('salvo em ' + (consent ? 'localStorage' : 'sessionStorage'), Object.keys(v));
       for (var i = 0; i < listeners.length; i++) { try { listeners[i](api.get()); } catch (e) {} }
     });
   }
@@ -192,11 +276,13 @@
   /* ---------------- leitura (o uso é responsabilidade de outros scripts/tags) ---------------- */
   var api = {
     get: function () { return JSON.parse(JSON.stringify(state)); },
-    has: function () { return !!(state.hashed.email || state.hashed.phone); },
+    has: function () { return !!(state.data.email || state.data.phone); },
+    consent: function () { return hasConsent(); },
     onChange: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
     ingest: ingest, // captura manual: cvtUserData.ingest({email:'...', phone:'...'}, 'manual')
-    clear: function () { state = empty(); try { localStorage.removeItem(KEY); } catch (e) {} },
-    version: '1.1.1'
+    recheckConsent: recheck,
+    clear: function () { state = empty(); lsDel('localStorage', KEY); lsDel('sessionStorage', KEY); },
+    version: '2.0.0'
   };
 
   /* ---------------- fonte 1: objetos (dataLayer / API / legado) ---------------- */
@@ -249,6 +335,7 @@
     function handle(entry) {
       try {
         if (!entry) return;
+        if (entry[0] === 'consent') { setTimeout(recheck, 0); return; } // Consent Mode do Google
         // gtag('event', ..., {customer:{...}}) chega como Arguments
         if (entry.length && typeof entry[0] === 'string' && entry[2]) scan(entry[2], 'gtag', 0, false);
         else scan(entry, 'dataLayer', 0, false);
@@ -407,5 +494,21 @@
   try { hookXHR(); } catch (e) {}
   try { hookForms(); } catch (e) {}
   try { migrateLegacy(); } catch (e) {}
-  log('ready', api.has() ? 'com dados' : 'vazio');
+  // consentimento: avalia agora, acompanha o banner da Convertr (Vuex) e reavalia após cliques
+  try { consent = hasConsent(); if (state.updated_at) persist(); } catch (e) {}
+  function watchNuxt() {
+    try {
+      var store = w.$nuxt && w.$nuxt.$store;
+      if (!store || !store.watch) return false;
+      store.watch(function (st) { return st.lgpd && st.lgpd.lgpd && st.lgpd.lgpd.expire_at; }, function () { setTimeout(recheck, 0); });
+      recheck();
+      return true;
+    } catch (e) { return true; }
+  }
+  if (!watchNuxt()) {
+    if (typeof w.onNuxtReady === 'function') { try { w.onNuxtReady(function () { watchNuxt(); }); } catch (e) {} }
+    var tries = 0, iv = setInterval(function () { if (watchNuxt() || ++tries > 30) clearInterval(iv); }, 1000);
+  }
+  try { d.addEventListener('click', function () { setTimeout(recheck, 600); }, true); } catch (e) {}
+  log('ready', api.has() ? 'com dados' : 'vazio', '| consentimento:', consent);
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);
