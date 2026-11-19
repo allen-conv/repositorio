@@ -4,13 +4,15 @@
   "private": true,
   "description": "Loaders internos da Convertr para as lojas (servidos via jsDelivr @main)",
   "scripts": {
-    "build": "npm run build:cvt-user-data && npm run build:google-ads",
+    "build": "npm run build:cvt-user-data && npm run build:google-ads && npm run build:meta-ads",
     "build:cvt-user-data": "terser src/cvt-user-data/cvt-user-data-loader.js -c -m --comments \"/^!/\" -o cvt-user-data-loader.min.js",
-    "test": "npm run test:cvt-user-data && npm run test:google-ads",
+    "test": "npm run test:cvt-user-data && npm run test:google-ads && npm run test:meta-ads",
     "test:cvt-user-data": "node src/cvt-user-data/cvt-user-data.test.js src/cvt-user-data/cvt-user-data-loader.js && node src/cvt-user-data/cvt-user-data.test.js cvt-user-data-loader.min.js",
     "ci": "npm run build && npm test",
     "build:google-ads": "terser src/google-ads/google-ads-loader.js -c -m --comments \"/^!/\" -o google-ads-loader.min.js",
-    "test:google-ads": "node src/google-ads/google-ads-loader.test.js src/google-ads/google-ads-loader.js && node src/google-ads/google-ads-loader.test.js google-ads-loader.min.js"
+    "test:google-ads": "node src/google-ads/google-ads-loader.test.js src/google-ads/google-ads-loader.js && node src/google-ads/google-ads-loader.test.js google-ads-loader.min.js",
+    "build:meta-ads": "terser src/meta-ads/meta-ads-loader.js -c -m --comments \"/^!/\" -o meta-ads-loader.min.js",
+    "test:meta-ads": "node src/meta-ads/meta-ads-loader.test.js src/meta-ads/meta-ads-loader.js && node src/meta-ads/meta-ads-loader.test.js meta-ads-loader.min.js"
   },
   "devDependencies": {
     "jsdom": "^24.1.3",
