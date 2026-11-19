@@ -104,12 +104,15 @@ const gtagPayload = (items, extra) => Object.assign({ items, value: 359.9, curre
   let w2 = boot(CFG, w => { w.localStorage.setItem('cvt_meta_tx', ls); w.gtag('event', 'purchase', Object.assign(gtagPayload(ckItems), { transaction_id: '1000001367' })); });
   assert.strictEqual(tracks(w2).length, 0, 'F5 não reenvia');
 
-  /* 9. contentType configurável e nulo */
-  w = boot({ pixelId: '1234567890', events: { add_to_cart: { name: 'AddToCart', contentType: 'product_group' }, view_item: { name: 'ViewContent', contentType: null } } });
+  /* 9. feedVariants: false -> sempre 'product' com o ID do produto pai */
+  w = boot({ pixelId: '1234567890', feedVariants: false, events: { add_to_cart: 'AddToCart', view_item: 'ViewContent', purchase: 'Purchase' } });
   w.gtag('event', 'add_to_cart', gtagPayload([cartItem]));
-  assert.strictEqual(last(w)[2].content_type, 'product_group'); assert.strictEqual(J(last(w)[2].content_ids), J(['712277']));
+  assert.strictEqual(last(w)[2].content_type, 'product'); assert.strictEqual(J(last(w)[2].content_ids), J(['712277']));
   w.gtag('event', 'view_item', gtagPayload([pdpItem]));
-  assert.ok(!('content_type' in last(w)[2])); assert.strictEqual(J(last(w)[2].content_ids), J(['712277']));
+  assert.strictEqual(last(w)[2].content_type, 'product'); assert.strictEqual(J(last(w)[2].content_ids), J(['712277']));
+  w.gtag('event', 'purchase', Object.assign(gtagPayload(ckItems), { transaction_id: 'SV-1' }));
+  assert.strictEqual(last(w)[2].content_type, 'product');
+  assert.ok(last(w)[2].content_ids.indexOf('712277') > -1, 'compra com ID do pai');
 
   /* 10. Advanced Matching a partir do cvt_ud (hash) e atualização */
   const ud = { v: 3, data: {}, hashed: { email: 'h_em', phone: 'h_ph', phone_e164: 'h_e164', first_name: 'h_fn', last_name: 'h_ln', city: 'h_ct', region: 'h_st', postal_code: 'h_zp', country: 'h_co', customer_id: 'h_id' } };

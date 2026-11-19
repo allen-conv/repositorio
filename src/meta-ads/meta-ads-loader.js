@@ -1,12 +1,15 @@
 /*!
- * meta-ads-loader v1.0.0 — Convertr / Performance
+ * meta-ads-loader v1.1.0 — Convertr / Performance
  * Envia os eventos de e-commerce da loja Convertr para o Meta Pixel, configurando por loja
- * quais eventos vão, com qual nome, qual content_type e se levam os itens.
+ * quais eventos vão, com qual nome e se levam os itens.
  *
  *   - considera SOMENTE os eventos disparados via gtag('event', ...); os mesmos eventos
  *     enviados em dataLayer.push({event: ...}) são ignorados (a Convertr envia os dois)
  *   - eventos padrão do Meta via fbq('track'); qualquer outro nome via fbq('trackCustom')
- *   - content_type por evento: 'product_group' (ID do produto pai) ou 'product' (ID da variação)
+ *   - IDs conforme o catálogo do Meta (feedVariants):
+ *       true  (catálogo com um item por variação): carrinho/checkout/compra -> content_type 'product' com o
+ *             ID da variação; página de produto, listas e desejos -> 'product_group' com o ID do produto pai
+ *       false (catálogo com um item por produto): sempre 'product' com o ID do produto pai
  *   - Advanced Matching a partir do cvt-user-data-loader (cvt_ud), em hash SHA-256
  *   - eventID vindo da plataforma (event_id) para deduplicar com a Conversions API
  *   - Purchase deduplicado por transaction_id (F5 na página de obrigado não reenvia)
@@ -23,9 +26,10 @@
  *       add_shipping_info: { name: 'AddShippingInfo', items: true },   // personalizado com itens
  *       sign_up: { name: 'CompleteRegistration', items: false }        // sem itens
  *     },
+ *     feedVariants: true,   // o catálogo do Meta tem um item por variação (tamanho/cor)?
  *     pageView: true, debug: false
  *   };
- *   Formato completo de um evento: { name, contentType: 'product'|'product_group'|null, items: true|false }
+ *   Formato completo de um evento: { name, items: true|false }
  */
 (function (w, d) {
   'use strict';
@@ -45,8 +49,10 @@
   var TX_KEY = 'cvt_meta_tx';
 
   var STANDARD = { AddPaymentInfo: 1, AddToCart: 1, AddToWishlist: 1, CompleteRegistration: 1, Contact: 1, CustomizeProduct: 1, Donate: 1, FindLocation: 1, InitiateCheckout: 1, Lead: 1, Purchase: 1, Schedule: 1, Search: 1, StartTrial: 1, SubmitApplication: 1, Subscribe: 1, ViewContent: 1 };
-  // content_type padrão por evento da loja: produto (pai) na página de produto; variação no resto
-  var DEFAULT_TYPE = { view_item: 'product_group', view_item_list: 'product_group', add_to_wishlist: 'product_group' };
+  // catálogo com variações: eventos em que o cliente já escolheu a variação levam o ID dela
+  var FEED_VARIANTS = CFG.feedVariants !== false;
+  var VARIANT_EVENTS = { add_to_cart: 1, remove_from_cart: 1, view_cart: 1, begin_checkout: 1, initiate_checkout: 1,
+    add_shipping_info: 1, add_payment_info: 1, purchase: 1, refund: 1 };
 
   // normaliza a configuração de eventos
   var EVENTS = {};
@@ -59,7 +65,7 @@
       name: String(e.name),
       custom: !STANDARD[e.name],
       items: e.items !== false,
-      contentType: 'contentType' in e ? e.contentType : (DEFAULT_TYPE[k] || 'product')
+      variant: FEED_VARIANTS && !!VARIANT_EVENTS[k]
     };
   }
 
@@ -129,10 +135,10 @@
     var list = (p && (p.items || (p.eventModel && p.eventModel.items))) || [];
     return [].slice.call(list);
   }
-  function contentOf(items, type) {
+  function contentOf(items, useVariant) {
     var ids = [], contents = [], n = 0, seen = {};
     items.forEach(function (i) {
-      var id = type === 'product_group' ? parentId(i) : (variantId(i) || parentId(i));
+      var id = useVariant ? (variantId(i) || parentId(i)) : parentId(i);
       if (!id) return;
       var q = parseInt(i.quantity, 10) || 1;
       n += q;
@@ -162,9 +168,10 @@
     if (cfg.items) {
       var items = itemsOf(p);
       if (items.length) {
-        var c = contentOf(items, cfg.contentType || 'product');
+        var c = contentOf(items, cfg.variant);
         if (c.content_ids.length) {
-          if (cfg.contentType) data.content_type = cfg.contentType;
+          // com variações: pai = grupo (product_group); variação = item (product). Sem variações: pai = item
+          data.content_type = FEED_VARIANTS && !cfg.variant ? 'product_group' : 'product';
           data.content_ids = c.content_ids;
           data.contents = c.contents;
           data.num_items = c.num_items;
@@ -209,6 +216,6 @@
   function hookUD() { if (w.cvtUserData && w.cvtUserData.onChange) { w.cvtUserData.onChange(refreshMatching); return true; } return false; }
   if (!hookUD()) { var t = 0, iv = setInterval(function () { if (hookUD() || ++t > 20) clearInterval(iv); }, 500); }
 
-  w.cvtMeta = { version: '1.0.0', send: handle, events: EVENTS, refreshMatching: refreshMatching };
-  log('pronto | eventos:', Object.keys(EVENTS).map(function (k) { return k + '→' + EVENTS[k].name + (EVENTS[k].custom ? ' (custom)' : '') + (EVENTS[k].items ? ' [itens:' + EVENTS[k].contentType + ']' : ' [sem itens]'); }));
+  w.cvtMeta = { version: '1.1.0', send: handle, events: EVENTS, refreshMatching: refreshMatching };
+  log('pronto | catálogo ' + (FEED_VARIANTS ? 'com' : 'sem') + ' variações | eventos:', Object.keys(EVENTS).map(function (k) { return k + '→' + EVENTS[k].name + (EVENTS[k].custom ? ' (custom)' : '') + (EVENTS[k].items ? ' [itens: ' + (EVENTS[k].variant ? 'variação' : 'produto pai') + ']' : ' [sem itens]'); }));
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);
