@@ -21,6 +21,7 @@ https://cdn.jsdelivr.net/gh/allen-conv/repositorio@main/<arquivo>
 | `cvt-user-data-loader.min.js` | Captura, padroniza e armazena os dados que o cliente informa (legíveis + SHA-256; localStorage com aceite, sessionStorage sem). Não envia nada. | `window.cvtUDConfig` (opcional) | [cvt-user-data](docs/loaders/cvt-user-data.md) |
 | `ga4-loader.min.js` | Envia os eventos da loja (gtag) para uma propriedade GA4: eventos configuráveis, personalizados com/sem itens, parâmetros extras, `user_id`/user_data via `cvt_ud`. | `window.cvtGa4Config = { measurementId, events }` | [ga4-loader](docs/loaders/ga4-loader.md) |
 | `google-ads-loader.min.js` | Envia os eventos de e-commerce (gtag) para o Google Ads: conversões, remarketing dinâmico e conversões otimizadas via `cvt_ud`. | `window.cvtGadsConfig = { conversionId, conversions }` | [google-ads-loader](docs/loaders/google-ads-loader.md) |
+| `b2b-events-loader.min.js` | Eventos extras das lojas B2B (ver preço, início de cadastro, cadastro criado e eventos próprios por clique/API), já enviados ao GA4 e ao Meta. Substitui a pasta "Eventos B2B - Login" do GTM. | `window.cvtB2bConfig = { ga4, metaPixelId, events }` | [b2b-events-loader](docs/loaders/b2b-events-loader.md) |
 | `edrone-loader.min.js` | Integração com a Edrone | `edrone_app_id`, `edrone_store_id`, `edrone_debug` | [edrone](docs/loaders/edrone.md) |
 | `google-ads.js` | Ponte de conversões do Google Ads a partir do dataLayer | `GADS_CONFIG = { conversionId, sendTo, debug }` | [google-ads](docs/loaders/google-ads.md) |
 | `merchant-reviews-loader.min.js` | Opt-in de avaliações do Google (Merchant Center) na confirmação da compra: só o `purchase` do gtag, uma vez por pedido, e-mail do pedido ou do `cvt_ud`, data de entrega com margem. Substituto planejado do `merchant_reviews.js`. | `window.cvtMerchantReviewsConfig = { merchantId }` | [merchant-reviews-loader](docs/loaders/merchant-reviews-loader.md) |
@@ -36,7 +37,7 @@ Lojas e containers que usam os loaders: [docs/lojas.md](docs/lojas.md).
 ```
 /                         arquivos servidos às lojas (não mover)
 ├── *.js, *.min.js
-├── src/<loader>/         código-fonte e testes de loaders com build (cvt-user-data, google-ads, meta-ads, ga4, merchant-reviews)
+├── src/<loader>/         código-fonte e testes de loaders com build (cvt-user-data, google-ads, meta-ads, ga4, merchant-reviews, b2b-events)
 ├── docs/
 │   ├── loaders/          uma página por loader
 │   ├── lojas.md          lojas × containers GTM × loaders
@@ -47,12 +48,13 @@ Lojas e containers que usam os loaders: [docs/lojas.md](docs/lojas.md).
     ├── build-google-ads.yml  testa, minifica e publica o google-ads-loader
     ├── build-meta-ads.yml    testa, minifica e publica o meta-ads-loader
     ├── build-ga4.yml         testa, minifica e publica o ga4-loader
-    └── build-merchant-reviews.yml  testa, minifica e publica o merchant-reviews-loader
+    ├── build-merchant-reviews.yml  testa, minifica e publica o merchant-reviews-loader
+    └── build-b2b-events.yml  testa, minifica e publica o b2b-events-loader
 ```
 
 ## Publicação
 
 - **Loaders editados direto na raiz** (os 5 originais): commit na `main` → `purge-jsdelivr.yml` limpa o cache → as lojas recebem em minutos.
-- **Loaders com fonte em `src/`** (cvt-user-data, google-ads, meta-ads, ga4, merchant-reviews): edite só o fonte → a Action testa, gera o arquivo da raiz, commita e limpa o cache. Se um teste falhar, nada é publicado.
+- **Loaders com fonte em `src/`** (cvt-user-data, google-ads, meta-ads, ga4, merchant-reviews, b2b-events): edite só o fonte → a Action testa, gera o arquivo da raiz, commita e limpa o cache. Se um teste falhar, nada é publicado.
 
 Tudo o que entra na `main` vai na hora para **todas** as lojas que usam o loader. Regras e checklist em [docs/convencoes.md](docs/convencoes.md).
