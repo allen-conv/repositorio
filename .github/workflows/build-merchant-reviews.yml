@@ -1,0 +1,58 @@
+name: merchant-reviews-loader - build, testes e publicação
+
+# Edite só src/merchant-reviews/merchant-reviews-loader.js.
+# A Action testa, gera o merchant-reviews-loader.min.js na raiz, commita e limpa o cache do jsDelivr.
+# Se algum teste falhar, o .min.js NÃO é atualizado e as lojas continuam na versão anterior.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/merchant-reviews/**'
+      - 'package.json'
+      - 'package-lock.json'
+  pull_request:
+    paths:
+      - 'src/merchant-reviews/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: merchant-reviews-loader
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Build + testes (fonte e minificado)
+        run: npm run build:merchant-reviews && npm run test:merchant-reviews
+
+      - name: Commit do .min.js
+        id: commit
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ -n "$(git status --porcelain merchant-reviews-loader.min.js)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add merchant-reviews-loader.min.js
+            git commit -m "build: merchant-reviews-loader.min.js"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Commits feitos pelo GITHUB_TOKEN não disparam o purge-jsdelivr.yml, então o purge é feito aqui
+      - name: Purge jsDelivr (@main)
+        if: steps.commit.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          URL="https://purge.jsdelivr.net/gh/${{ github.repository }}@main/merchant-reviews-loader.min.js"
+          echo "Purge -> HTTP $(curl -s -o /dev/null -w '%{http_code}' "$URL")"

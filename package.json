@@ -4,9 +4,9 @@
   "private": true,
   "description": "Loaders internos da Convertr para as lojas (servidos via jsDelivr @main)",
   "scripts": {
-    "build": "npm run build:cvt-user-data && npm run build:google-ads && npm run build:meta-ads && npm run build:ga4",
+    "build": "npm run build:cvt-user-data && npm run build:google-ads && npm run build:meta-ads && npm run build:ga4 && npm run build:merchant-reviews",
     "build:cvt-user-data": "terser src/cvt-user-data/cvt-user-data-loader.js -c -m --comments \"/^!/\" -o cvt-user-data-loader.min.js",
-    "test": "npm run test:cvt-user-data && npm run test:google-ads && npm run test:meta-ads && npm run test:ga4",
+    "test": "npm run test:cvt-user-data && npm run test:google-ads && npm run test:meta-ads && npm run test:ga4 && npm run test:merchant-reviews",
     "test:cvt-user-data": "node src/cvt-user-data/cvt-user-data.test.js src/cvt-user-data/cvt-user-data-loader.js && node src/cvt-user-data/cvt-user-data.test.js cvt-user-data-loader.min.js",
     "ci": "npm run build && npm test",
     "build:google-ads": "terser src/google-ads/google-ads-loader.js -c -m --comments \"/^!/\" -o google-ads-loader.min.js",
@@ -14,7 +14,9 @@
     "build:meta-ads": "terser src/meta-ads/meta-ads-loader.js -c -m --comments \"/^!/\" -o meta-ads-loader.min.js",
     "test:meta-ads": "node src/meta-ads/meta-ads-loader.test.js src/meta-ads/meta-ads-loader.js && node src/meta-ads/meta-ads-loader.test.js meta-ads-loader.min.js",
     "build:ga4": "terser src/ga4/ga4-loader.js -c -m --comments \"/^!/\" -o ga4-loader.min.js",
-    "test:ga4": "node src/ga4/ga4-loader.test.js src/ga4/ga4-loader.js && node src/ga4/ga4-loader.test.js ga4-loader.min.js"
+    "test:ga4": "node src/ga4/ga4-loader.test.js src/ga4/ga4-loader.js && node src/ga4/ga4-loader.test.js ga4-loader.min.js",
+    "build:merchant-reviews": "terser src/merchant-reviews/merchant-reviews-loader.js -c -m --comments \"/^!/\" -o merchant-reviews-loader.min.js",
+    "test:merchant-reviews": "node src/merchant-reviews/merchant-reviews-loader.test.js src/merchant-reviews/merchant-reviews-loader.js && node src/merchant-reviews/merchant-reviews-loader.test.js merchant-reviews-loader.min.js"
   },
   "devDependencies": {
     "jsdom": "^24.1.3",
