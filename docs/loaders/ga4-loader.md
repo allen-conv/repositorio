@@ -3,7 +3,7 @@
 Envia os eventos das lojas Convertr para uma propriedade do **GA4**. Cada loja configura quais eventos vão, com que nome, se levam os itens e quais parâmetros extras acompanham.
 
 - Só considera os eventos do **gtag**. O `dataLayer.push` duplicado da Convertr é ignorado, assim como eventos com `send_to` (de outros loaders).
-- O GA4 fica num **grupo próprio do gtag** (`cvt_ga4`) e só recebe o que este loader envia.
+- Os envios saem por uma **instância própria do gtag**, com dataLayer `cvtGa4DataLayer`. O GTM das lojas mistura nos eventos do dataLayer principal os objetos `items`, `ecommerce` e `eventModel` que a Convertr deixa no modelo. Por esse caminho, até um evento sem itens chegaria ao GA4 com os itens de outra página e com parâmetros `[object Object]`. A instância própria evita isso. O **Consent Mode** da loja (`gtag('consent', ...)`) é espelhado nela automaticamente.
 - **Itens no esquema do GA4:** `item_id`, `item_name`, `item_variant`, `item_category`, `price`, `quantity`, `index`… O `item_id` pode ser o produto pai, a variação ou o SKU.
 - **Eventos personalizados** com ou sem itens, com parâmetros copiados do evento da loja ou valores fixos.
 - **Opcional:** `user_id` e dados fornecidos pelo usuário a partir do [cvt-user-data](cvt-user-data.md).

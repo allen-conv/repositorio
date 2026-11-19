@@ -16,7 +16,8 @@ function boot(cfg, before) {
   return w;
 }
 const isA = e => e && typeof e.length === 'number' && typeof e[0] === 'string';
-const sent = w => w.dataLayer.filter(e => isA(e) && e[0] === 'event' && e[2] && e[2].send_to === 'cvt_ga4');
+const own = w => w.cvtGa4DataLayer || [];
+const sent = w => own(w).filter(e => isA(e) && e[0] === 'event');
 const last = w => sent(w)[sent(w).length - 1];
 
 const pdpItem = { id: 712277, item_id: 712277, item_sku: '26000102', item_name: 'Tênis Flat Core Plus', item_category: 'Footwear', price: 359.9, quantity: 1 };
@@ -43,10 +44,12 @@ const pl = (items, extra) => Object.assign({ items, value: 359.9, currency: 'BRL
 
   /* 2. config em grupo próprio; view_item do backlog com itens no esquema GA4 */
   w = boot(CFG, w => w.gtag('event', 'view_item', pl([pdpItem])));
-  const cfg = w.dataLayer.find(e => isA(e) && e[0] === 'config' && e[1] === 'G-TESTE12345');
-  assert.strictEqual(J(cfg[2]), J({ groups: 'cvt_ga4', send_page_view: true }));
+  const cfg = own(w).find(e => isA(e) && e[0] === 'config' && e[1] === 'G-TESTE12345');
+  assert.strictEqual(J(cfg[2]), J({ send_page_view: true }));
+  assert.ok(!w.dataLayer.some(e => isA(e) && (e[0] === 'config' && e[1] === 'G-TESTE12345' || (e[0] === 'event' && e[2] && e[2].send_to === 'G-TESTE12345'))), 'nada do loader no dataLayer principal');
+  assert.ok([...w.document.scripts].some(s => s.src.includes('gtag/js?id=G-TESTE12345&l=cvtGa4DataLayer')), 'gtag.js com dataLayer próprio');
   let v = last(w);
-  assert.strictEqual(v[1], 'view_item'); assert.strictEqual(v[2].value, 359.9); assert.strictEqual(v[2].currency, 'BRL');
+  assert.strictEqual(v[1], 'view_item'); assert.strictEqual(v[2].send_to, 'G-TESTE12345'); assert.strictEqual(v[2].value, 359.9); assert.strictEqual(v[2].currency, 'BRL');
   assert.strictEqual(J(v[2].items), J([{ item_id: '712277', item_name: 'Tênis Flat Core Plus', price: 359.9, quantity: 1, index: 0, item_category: 'Footwear' }]));
 
   /* 3. push em objeto ignorado; add_to_cart via gtag com item_variant */
@@ -109,22 +112,31 @@ const pl = (items, extra) => Object.assign({ items, value: 359.9, currency: 'BRL
   /* 10. userId e userData a partir do cvt_ud */
   const ud = { v: 3, data: { customer_id: '98765', city: 'navegantes', region: 'sc', postal_code: '88372502', country: 'br' }, hashed: { email: 'h_em', phone_e164: 'h_ph', first_name: 'h_fn', last_name: 'h_ln' } };
   w = boot(Object.assign({}, CFG, { userId: true, userData: true }), w => w.localStorage.setItem('cvt_ud', J(ud)));
-  const c2 = w.dataLayer.find(e => isA(e) && e[0] === 'config');
+  const c2 = own(w).find(e => isA(e) && e[0] === 'config');
   assert.strictEqual(c2[2].user_id, '98765');
-  const set = w.dataLayer.filter(e => isA(e) && e[0] === 'set' && e[1] === 'user_data');
+  const set = own(w).filter(e => isA(e) && e[0] === 'set' && e[1] === 'user_data');
   assert.strictEqual(set.length, 1);
   assert.strictEqual(J(set[0][2]), J({ sha256_email_address: 'h_em', sha256_phone_number: 'h_ph', address: { sha256_first_name: 'h_fn', sha256_last_name: 'h_ln', city: 'navegantes', region: 'SC', postal_code: '88372502', country: 'BR' } }));
   // padrão: sem user_data / user_id
   w = boot(CFG, w => w.localStorage.setItem('cvt_ud', J(ud)));
-  assert.ok(!w.dataLayer.some(e => isA(e) && e[0] === 'set'));
-  assert.ok(!('user_id' in w.dataLayer.find(e => isA(e) && e[0] === 'config')[2]));
+  assert.ok(!own(w).some(e => isA(e) && e[0] === 'set'));
+  assert.ok(!('user_id' in own(w).find(e => isA(e) && e[0] === 'config')[2]));
 
   /* 11. sendPageView: false; injeta gtag.js quando não existe */
   w = boot(Object.assign({}, CFG, { sendPageView: false }));
-  assert.strictEqual(w.dataLayer.find(e => isA(e) && e[0] === 'config')[2].send_page_view, false);
+  assert.strictEqual(own(w).find(e => isA(e) && e[0] === 'config')[2].send_page_view, false);
   const dom = new JSDOM('<!doctype html><head></head><body></body>', { url: 'https://loja.com.br/', runScripts: 'outside-only' });
   dom.window.cvtGa4Config = CFG; dom.window.eval(code);
-  assert.ok([...dom.window.document.scripts].some(s => s.src.includes('gtag/js?id=G-TESTE12345')));
+  assert.ok([...dom.window.document.scripts].some(s => s.src.includes('gtag/js?id=G-TESTE12345&l=cvtGa4DataLayer')));
+
+  /* 12. Consent Mode espelhado (backlog e update) */
+  w = boot(CFG, w => w.gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied' }));
+  let cons = own(w).filter(e => isA(e) && e[0] === 'consent');
+  assert.strictEqual(cons.length, 1); assert.strictEqual(cons[0][1], 'default'); assert.strictEqual(cons[0][2].analytics_storage, 'denied');
+  assert.ok(own(w).indexOf(cons[0]) < own(w).findIndex(e => isA(e) && e[0] === 'config'), 'consent default antes do config');
+  w.gtag('consent', 'update', { analytics_storage: 'granted' });
+  cons = own(w).filter(e => isA(e) && e[0] === 'consent');
+  assert.strictEqual(cons.length, 2); assert.strictEqual(cons[1][1], 'update'); assert.strictEqual(cons[1][2].analytics_storage, 'granted');
 
   console.log('ALL TESTS PASSED:', file.split('/').pop());
 })().catch(e => { console.error('FAIL', e.message, e.stack.split('\n')[1]); process.exit(1); });

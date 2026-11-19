@@ -5,7 +5,8 @@
  *
  *   - considera SOMENTE os eventos disparados via gtag('event', ...); os mesmos eventos
  *     enviados em dataLayer.push({event: ...}) são ignorados (a Convertr envia os dois)
- *   - grupo próprio no gtag (cvt_ga4): só recebe o que este loader envia
+ *   - instância própria do gtag (dataLayer cvtGa4DataLayer): o GTM não mistura campos nos envios;
+ *     o Consent Mode da loja é espelhado
  *   - itens no esquema do GA4 (item_id, item_name, item_variant, item_category, price, quantity...)
  *     com o ID escolhido por loja: produto pai, variação ou SKU
  *   - eventos personalizados com ou sem itens; parâmetros extras copiados do evento da loja
@@ -41,7 +42,6 @@
   if (!/^G-[A-Z0-9]{4,}$/i.test(MID)) { if (w.console) console.warn('[cvt-ga4] cvtGa4Config.measurementId ausente ou inválido (esperado G-XXXXXXXXXX). Loader não iniciado.'); return; }
   w.__cvtGa4Loaded = true;
 
-  var GROUP = 'cvt_ga4';
   var DL_NAME = CFG.dataLayerName || 'dataLayer';
   var CURRENCY = CFG.currency || 'BRL';
   var ITEM_ID = CFG.itemId || 'product';
@@ -69,19 +69,31 @@
     };
   }
 
-  /* ---------------- gtag ---------------- */
+  /* ---------------- gtag em dataLayer próprio ---------------- */
+  // O GTM das lojas mistura no dataLayer principal os objetos items/ecommerce/eventModel que a
+  // Convertr deixa no modelo; qualquer evento enviado por ali chegaria ao GA4 com esses campos
+  // (inclusive itens de outra página em eventos sem itens). Por isso o envio usa uma instância
+  // própria do gtag (gtag.js?l=cvtGa4DataLayer), que o GTM não processa.
   var dl = w[DL_NAME] = w[DL_NAME] || [];
-  if (typeof w.gtag !== 'function') { w.gtag = function () { dl.push(arguments); }; w.gtag('js', new Date()); }
-  function gtag() { w.gtag.apply(w, arguments); }
-  var hasGtagJs = [].some.call(d.scripts || [], function (s) { return /googletagmanager\.com\/gtag\/js/.test(s.src || ''); });
-  if (!hasGtagJs) {
-    var s = d.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=' + MID;
-    (d.head || d.documentElement).appendChild(s);
+  var ODL = CFG.ownDataLayer || 'cvtGa4DataLayer';
+  var own = w[ODL] = w[ODL] || [];
+  function gtag() { own.push(arguments); }
+  gtag('js', new Date());
+  var s = d.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=' + MID + '&l=' + ODL;
+  (d.head || d.documentElement).appendChild(s);
+  // espelha o Consent Mode da loja na instância própria
+  function isArgs(e) { return e && typeof e === 'object' && typeof e.length === 'number' && typeof e[0] === 'string'; }
+  function mirrorConsent(e) {
+    if (isArgs(e) && e[0] === 'consent' && (e[1] === 'default' || e[1] === 'update') && e[2] && typeof e[2] === 'object') {
+      var c = {}; for (var k2 in e[2]) if (e[2].hasOwnProperty(k2)) c[k2] = e[2][k2];
+      gtag('consent', e[1], c); log('consent', e[1], c);
+    }
   }
+  for (var ci = 0; ci < dl.length; ci++) mirrorConsent(dl[ci]);
 
   /* ---------------- cvt_ud: user_id e user_data ---------------- */
   function readUD() { try { return JSON.parse(w.localStorage.getItem('cvt_ud') || w.sessionStorage.getItem('cvt_ud') || 'null'); } catch (e) { return null; } }
-  var cfgParams = { groups: GROUP, send_page_view: CFG.sendPageView !== false };
+  var cfgParams = { send_page_view: CFG.sendPageView !== false };
   if (CFG.userId) { var u0 = readUD(); if (u0 && u0.data && u0.data.customer_id) cfgParams.user_id = String(u0.data.customer_id); }
   gtag('config', MID, cfgParams);
   log('config', MID, cfgParams, '| eventos:', Object.keys(EVENTS).map(function (k) { return k + '→' + EVENTS[k].name + (EVENTS[k].items ? ' [itens]' : ' [sem itens]'); }));
@@ -91,7 +103,7 @@
     var ud = readUD(); if (!ud) return;
     if (CFG.userId && ud.data && ud.data.customer_id) {
       var uid = String(ud.data.customer_id);
-      if (cfgParams.user_id !== uid) { cfgParams.user_id = uid; gtag('config', MID, { groups: GROUP, user_id: uid, send_page_view: false }); log('user_id', uid); }
+      if (cfgParams.user_id !== uid) { cfgParams.user_id = uid; gtag('config', MID, { user_id: uid, send_page_view: false }); log('user_id', uid); }
     }
     if (!CFG.userData) return;
     var h = ud.hashed || {}, v = ud.data || {}, o = {}, a = {};
@@ -150,7 +162,6 @@
   function txSent(tx) { try { return JSON.parse(w.localStorage.getItem(TX_KEY) || '[]').indexOf(tx) > -1; } catch (e) { return false; } }
   function markTx(tx) { try { var l = JSON.parse(w.localStorage.getItem(TX_KEY) || '[]'); l.push(tx); w.localStorage.setItem(TX_KEY, JSON.stringify(l.slice(-50))); } catch (e) {} }
 
-  var sending = false;
   function handle(storeEvent, p) {
     var cfg = EVENTS[storeEvent]; if (!cfg) return;
     p = p || {};
@@ -164,7 +175,7 @@
       else if (txSent(tx)) { log('purchase', tx, 'já enviado — ignorado'); return; }
     }
 
-    var data = { send_to: GROUP };
+    var data = { send_to: MID };
     var value = pick('value');
     if (value != null) data.value = num(value);
     var cur = pick('currency'); if (cur || data.value != null || cfg.items) data.currency = cur || CURRENCY;
@@ -183,23 +194,22 @@
     }
 
     syncUser();
-    sending = true;
-    try { gtag('event', cfg.name, data); } finally { sending = false; }
+    gtag('event', cfg.name, data);
     log('event', cfg.name, data);
     if (tx) markTx(tx);
   }
 
   /* ---------------- escuta do dataLayer (somente gtag) ---------------- */
-  function isArgs(e) { return e && typeof e === 'object' && typeof e.length === 'number' && typeof e[0] === 'string'; }
   function onEntry(e) {
     try {
-      if (sending || !isArgs(e) || e[0] !== 'event' || typeof e[1] !== 'string') return;
+      mirrorConsent(e);
+      if (!isArgs(e) || e[0] !== 'event' || typeof e[1] !== 'string') return;
       var p = e[2] && typeof e[2] === 'object' ? e[2] : {};
       if (p.send_to) return; // já direcionado (este loader, google-ads-loader etc.)
       handle(e[1], p);
     } catch (err) { log('erro', err); }
   }
-  for (var i = 0; i < dl.length; i++) onEntry(dl[i]);
+  for (var i = 0; i < dl.length; i++) { var be = dl[i]; if (!(isArgs(be) && be[0] === 'consent')) onEntry(be); }
   var orig = dl.push;
   dl.push = function () {
     for (var j = 0; j < arguments.length; j++) onEntry(arguments[j]);
@@ -210,5 +220,5 @@
   function hookUD() { if (w.cvtUserData && w.cvtUserData.onChange) { w.cvtUserData.onChange(syncUser); return true; } return false; }
   if (!hookUD()) { var t = 0, iv = setInterval(function () { if (hookUD() || ++t > 20) clearInterval(iv); }, 500); }
 
-  w.cvtGa4 = { version: '1.0.0', send: handle, events: EVENTS };
+  w.cvtGa4 = { version: '1.0.0', send: handle, events: EVENTS, dataLayer: ODL };
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);
