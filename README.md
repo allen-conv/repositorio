@@ -19,6 +19,7 @@ https://cdn.jsdelivr.net/gh/allen-conv/repositorio@main/<arquivo>
 | Arquivo (raiz) | O que faz | Configuração na loja | Doc |
 |---|---|---|---|
 | `cvt-user-data-loader.min.js` | Captura, padroniza e armazena os dados que o cliente informa (legíveis + SHA-256; localStorage com aceite, sessionStorage sem). Não envia nada. | `window.cvtUDConfig` (opcional) | [cvt-user-data](docs/loaders/cvt-user-data.md) |
+| `ga4-loader.min.js` | Envia os eventos da loja (gtag) para uma propriedade GA4: eventos configuráveis, personalizados com/sem itens, parâmetros extras, `user_id`/user_data via `cvt_ud`. | `window.cvtGa4Config = { measurementId, events }` | [ga4-loader](docs/loaders/ga4-loader.md) |
 | `google-ads-loader.min.js` | Envia os eventos de e-commerce (gtag) para o Google Ads: conversões, remarketing dinâmico e conversões otimizadas via `cvt_ud`. | `window.cvtGadsConfig = { conversionId, conversions }` | [google-ads-loader](docs/loaders/google-ads-loader.md) |
 | `edrone-loader.min.js` | Integração com a Edrone | `edrone_app_id`, `edrone_store_id`, `edrone_debug` | [edrone](docs/loaders/edrone.md) |
 | `google-ads.js` | Ponte de conversões do Google Ads a partir do dataLayer | `GADS_CONFIG = { conversionId, sendTo, debug }` | [google-ads](docs/loaders/google-ads.md) |
@@ -34,7 +35,7 @@ Lojas e containers que usam os loaders: [docs/lojas.md](docs/lojas.md).
 ```
 /                         arquivos servidos às lojas (não mover)
 ├── *.js, *.min.js
-├── src/<loader>/         código-fonte e testes de loaders com build (cvt-user-data, google-ads, meta-ads)
+├── src/<loader>/         código-fonte e testes de loaders com build (cvt-user-data, google-ads, meta-ads, ga4)
 ├── docs/
 │   ├── loaders/          uma página por loader
 │   ├── lojas.md          lojas × containers GTM × loaders
@@ -43,12 +44,13 @@ Lojas e containers que usam os loaders: [docs/lojas.md](docs/lojas.md).
     ├── purge-jsdelivr.yml    limpa o cache @main dos .js alterados a cada push
     ├── build-user-data.yml   testa, minifica e publica o cvt-user-data-loader
     ├── build-google-ads.yml  testa, minifica e publica o google-ads-loader
-    └── build-meta-ads.yml    testa, minifica e publica o meta-ads-loader
+    ├── build-meta-ads.yml    testa, minifica e publica o meta-ads-loader
+    └── build-ga4.yml         testa, minifica e publica o ga4-loader
 ```
 
 ## Publicação
 
 - **Loaders editados direto na raiz** (os 5 originais): commit na `main` → `purge-jsdelivr.yml` limpa o cache → as lojas recebem em minutos.
-- **Loaders com fonte em `src/`** (cvt-user-data, google-ads, meta-ads): edite só o fonte → a Action testa, gera o arquivo da raiz, commita e limpa o cache. Se um teste falhar, nada é publicado.
+- **Loaders com fonte em `src/`** (cvt-user-data, google-ads, meta-ads, ga4): edite só o fonte → a Action testa, gera o arquivo da raiz, commita e limpa o cache. Se um teste falhar, nada é publicado.
 
 Tudo o que entra na `main` vai na hora para **todas** as lojas que usam o loader. Regras e checklist em [docs/convencoes.md](docs/convencoes.md).
