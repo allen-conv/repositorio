@@ -138,6 +138,20 @@ const CFG = { ga4: 'G-ABC1234', metaPixelId: '111222333' };
   click(w, 'vp'); openPopup(w); await tick();
   assert.ok(!w.cvtB2bDataLayer); assert.strictEqual(metaEvents(w).length, 1);
 
+  /* 11. G- já carregado na página (nativo): envia pelo dataLayer principal, sem items/ecommerce/eventModel */
+  w = boot(CFG, { before: w => { w.google_tag_manager = { 'G-ABC1234': {} };
+    const op = w.dataLayer.push; // simula o GTM/tema que completa os comandos gtag
+    w.dataLayer.push = function (a) { if (a && a[0] === 'event' && a[2]) { a[2].items = [{ item_id: 'velho' }]; a[2].ecommerce = { items: a[2].items }; a[2].eventModel = {}; } return op.apply(this, arguments); };
+  } });
+  click(w, 'vp'); w.history.pushState({}, '', '/login'); await tick();
+  assert.ok(!w.cvtB2bDataLayer, 'não cria instância própria');
+  ga = gaEvents(w, 'dataLayer');
+  assert.strictEqual(ga.length, 1); assert.strictEqual(ga[0].name, 'b_ver_preco');
+  assert.strictEqual(Object.prototype.toString.call(w.dataLayer.filter(a => a && a[0] === 'event')[0]), '[object Arguments]', 'comando gtag como Arguments');
+  assert.strictEqual(JSON.stringify(Object.keys(ga[0].p)), JSON.stringify(['send_to', 'trigger', 'source']));
+  assert.strictEqual(ga[0].p.items, undefined);
+  assert.strictEqual(ga[0].p.source, 'home', 'source = página do clique, não /login');
+
   console.log('b2b-events-loader: todos os testes passaram (' + file + ')');
   process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });

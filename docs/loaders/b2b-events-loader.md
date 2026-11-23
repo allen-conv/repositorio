@@ -64,7 +64,11 @@ Nomes da lista de eventos padrão do Meta (`CompleteRegistration`, `Lead`, `Cont
 
 ## Como envia
 
-- **GA4:** instância própria do gtag (dataLayer `cvtB2bDataLayer`), sem `page_view`, com o Consent Mode da loja espelhado. Assim o GTM não mistura campos da página nos eventos. Se o [ga4-loader](ga4-loader.md) estiver na página com o **mesmo G-**, usa a instância dele.
+- **GA4**, nesta ordem:
+  1. se o [ga4-loader](ga4-loader.md) estiver na página com o **mesmo G-**, usa a instância dele;
+  2. se o G- **já estiver carregado na página** (GA4 nativo da plataforma ou do GTM, que é o caso mais comum), envia pelo `gtag` principal com `send_to`. O Google aceita só uma instância por ID, então uma instância própria com o mesmo G- seria ignorada. As chaves `items`, `ecommerce` e `eventModel`, que o GTM/tema da Convertr acrescenta a todo comando gtag, ficam protegidas e não chegam ao GA4;
+  3. senão, cria uma instância própria do gtag (dataLayer `cvtB2bDataLayer`), sem `page_view`, com o Consent Mode da loja espelhado.
+- O `source` é a página **onde o clique aconteceu** (ex.: `home`), mesmo quando o botão leva para `/login`.
 - **Meta:** se o [meta-ads-loader](meta-ads-loader.md) estiver na página com o mesmo pixel, só envia os eventos. Senão, carrega o pixel e faz o `init` (com Advanced Matching do [cvt-user-data](cvt-user-data.md)), **sem `PageView`**.
 
 ## Testar

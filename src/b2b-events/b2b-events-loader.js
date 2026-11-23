@@ -1,5 +1,5 @@
 /*!
- * b2b-events-loader v1.0.0 — Convertr / Performance
+ * b2b-events-loader v1.1.0 — Convertr / Performance
  * Eventos extras das lojas B2B (atacado) da Convertr, já enviados para o GA4 e o Meta.
  * Substitui a pasta "Eventos B2B - Login" do GTM (tag "Eventos Datalayer - login" + tags GA4 b_*).
  *
@@ -67,6 +67,16 @@
   /* ---------------- GA4 (instância própria do gtag, como o ga4-loader) ---------------- */
   function isArgs(e) { return e && typeof e === 'object' && typeof e.length === 'number' && typeof e[0] === 'string'; }
   var gaPush = null;
+  function args() { return arguments; } // o gtag.js só processa objetos Arguments, não arrays
+  // O GTM/tema das lojas Convertr completa todo comando gtag do dataLayer principal com items,
+  // ecommerce e eventModel (chegam ao GA4 como "[object Object]" ou com itens de outra página).
+  // Essas três chaves viram propriedades não enumeráveis e somente leitura: a cópia é ignorada.
+  function guard(o) {
+    ['items', 'ecommerce', 'eventModel'].forEach(function (k) {
+      try { Object.defineProperty(o, k, { get: function () { return undefined; }, set: function () {}, enumerable: false }); } catch (e) {}
+    });
+    return o;
+  }
   function ga() {
     if (gaPush) return gaPush;
     // ga4-loader na página com o mesmo G-: usa a instância dele
@@ -75,6 +85,15 @@
       var other = w[g4.dataLayer];
       gaPush = function (args) { other.push(args); };
       log('GA4 via ga4-loader');
+      return gaPush;
+    }
+    // G- já carregado na página (GA4 nativo da plataforma ou do GTM): o Google só aceita uma
+    // instância por ID, então uma instância própria com o mesmo G- seria ignorada. Envia pelo
+    // dataLayer principal, com send_to e as chaves protegidas.
+    var gtm = w.google_tag_manager;
+    if (gtm && gtm[MID]) {
+      gaPush = function (a) { if (a[0] === 'event' && a[2]) guard(a[2]); dl.push(a); };
+      log('GA4 via instância já carregada na página', MID);
       return gaPush;
     }
     var name = CFG.ownDataLayer || 'cvtB2bDataLayer', own = w[name] = w[name] || [];
@@ -148,7 +167,7 @@
 
     if (MID && cfg.ga4) {
       var gd = { send_to: MID }; for (var a in data) gd[a] = data[a];
-      ga()(['event', String(cfg.ga4), gd]);
+      ga()(args('event', String(cfg.ga4), gd));
       log('GA4', cfg.ga4, gd);
     }
     if (PIXEL && cfg.meta) {
@@ -160,17 +179,18 @@
   }
 
   /* ---------------- begin_login: pop-up de cadastro e /login ---------------- */
-  var lastTrigger = 'unknown', loginStartFired = false;
+  var lastTrigger = 'unknown', lastSource = null, loginStartFired = false;
   function matches(el, sel) { try { return !!(el && el.matches && sel && el.matches(sel)); } catch (e) { return false; } }
 
   d.addEventListener('click', function (ev) {
-    var el = ev.target;
-    while (el && el !== d) {
-      if (matches(el, SEL.verPreco)) { lastTrigger = 'ver_preco'; break; }
-      if (matches(el, SEL.criarConta)) { lastTrigger = 'header_criar_conta'; break; }
-      if (matches(el, SEL.vitrine)) { lastTrigger = 'vitrine'; break; }
+    var el = ev.target, t = null;
+    while (el && el !== d && !t) {
+      if (matches(el, SEL.verPreco)) t = 'ver_preco';
+      else if (matches(el, SEL.criarConta)) t = 'header_criar_conta';
+      else if (matches(el, SEL.vitrine)) t = 'vitrine';
       el = el.parentElement;
     }
+    if (t) { lastTrigger = t; lastSource = source(); } // guarda a página de origem do clique
     // cliques personalizados
     (CFG.clicks || []).forEach(function (c) {
       var t = ev.target;
@@ -180,9 +200,9 @@
 
   function beginLogin() {
     loginStartFired = false;
-    var t = lastTrigger; lastTrigger = 'unknown';
-    fire('begin_login', { trigger: t });
-    if (t === 'ver_preco') fire('ver_preco', { trigger: t });
+    var t = lastTrigger, src = lastSource || source(); lastTrigger = 'unknown'; lastSource = null;
+    fire('begin_login', { trigger: t, source: src });
+    if (t === 'ver_preco') fire('ver_preco', { trigger: t, source: src });
   }
 
   function popupVisible() {
@@ -252,6 +272,6 @@
     };
   }
 
-  w.cvtB2b = { version: '1.0.0', fire: fire, events: EVENTS };
+  w.cvtB2b = { version: '1.1.0', fire: fire, events: EVENTS };
   log('pronto | GA4:', MID || '—', '| Meta:', PIXEL || '—', '| eventos:', Object.keys(EVENTS).map(function (k) { return k + '→' + (EVENTS[k].ga4 || '—') + '/' + (EVENTS[k].meta || '—'); }));
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);
