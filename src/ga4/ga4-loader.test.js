@@ -138,5 +138,50 @@ const pl = (items, extra) => Object.assign({ items, value: 359.9, currency: 'BRL
   cons = own(w).filter(e => isA(e) && e[0] === 'consent');
   assert.strictEqual(cons.length, 2); assert.strictEqual(cons[1][1], 'update'); assert.strictEqual(cons[1][2].analytics_storage, 'granted');
 
+  /* 13. reserva: evento só no dataLayer é enviado; par gtag + dataLayer envia uma vez só */
+  const apiItems = [{ item_id: 7633825, item_group_id: 1299247, item_sku: '1512710603', item_name: 'Blusa Ariane', item_variant: 'MARINHO / G', price: 52, quantity: 1, product_id: 1299247, variation_id: 7633825 }];
+  const C13 = { measurementId: 'G-TESTE12345', events: { add_payment_info: 'add_payment_info', add_shipping_info: 'add_shipping_info' } };
+  w = boot(C13);
+  w.dataLayer.push({ event: 'add_payment_info', currency: 'BRL', value: 735.4, payment_type: 'pix', items: apiItems });
+  w.dataLayer.push({ event: 'add_shipping_info', currency: 'BRL', value: 735.4, items: apiItems });
+  w.gtag('event', 'add_shipping_info', pl(apiItems, { value: 735.4 }));
+  assert.strictEqual(sent(w).length, 1, 'add_shipping_info pelo gtag na hora');
+  await new Promise(r => setTimeout(r, 1000));
+  assert.strictEqual(J(sent(w).map(e => e[1])), J(['add_shipping_info', 'add_payment_info']), 'reserva só para o que não veio pelo gtag');
+  v = last(w);
+  assert.strictEqual(v[2].value, 735.4); assert.strictEqual(v[2].payment_type, 'pix');
+  assert.strictEqual(v[2].items[0].item_id, '1299247'); assert.strictEqual(v[2].items[0].item_variant, 'MARINHO / G');
+  w = boot(Object.assign({ dataLayerFallback: false }, C13));
+  w.dataLayer.push({ event: 'add_payment_info', value: 1, items: apiItems });
+  await new Promise(r => setTimeout(r, 1000));
+  assert.strictEqual(sent(w).length, 0, 'dataLayerFallback: false');
+  // backlog: objeto sem gtag no backlog é enviado na carga
+  w = boot(C13, w => w.dataLayer.push({ event: 'add_payment_info', value: 735.4, items: apiItems }));
+  assert.strictEqual(sent(w).length, 1);
+
+  /* 14. G- já carregado na página (GA4 nativo): não cria instância, não duplica, envia só o que falta */
+  const C14 = { measurementId: 'G-KMMBY1SCXS', events: { view_item: 'view_item', initiate_checkout: 'begin_checkout', add_payment_info: 'add_payment_info' } };
+  w = boot(C14, w => {
+    w.gtag('config', 'G-KMMBY1SCXS');
+    const op = w.dataLayer.push; // simula o GTM/tema que completa os comandos gtag
+    w.dataLayer.push = function (a) { if (a && a[0] === 'event' && a[2]) { a[2].items = a[2].items || [{ item_id: 'velho' }]; a[2].ecommerce = { items: a[2].items }; a[2].eventModel = {}; } return op.apply(this, arguments); };
+  });
+  assert.ok(!w.cvtGa4DataLayer, 'sem instância própria'); assert.strictEqual(w.cvtGa4.native, true);
+  assert.ok(![...w.document.scripts].some(s => s.src.includes('l=cvtGa4DataLayer')));
+  const mine = () => w.dataLayer.filter(e => isA(e) && e[0] === 'event' && e[2] && e[2].send_to === 'G-KMMBY1SCXS');
+  w.gtag('event', 'view_item', pl([pdpItem]));
+  assert.strictEqual(mine().length, 0, 'view_item já vai pelo nativo');
+  w.gtag('event', 'initiate_checkout', pl(ckItems));
+  assert.strictEqual(mine().length, 1); assert.strictEqual(mine()[0][1], 'begin_checkout');
+  assert.strictEqual(Object.prototype.toString.call(mine()[0]), '[object Arguments]');
+  w.dataLayer.push({ event: 'add_payment_info', currency: 'BRL', value: 735.4, items: apiItems });
+  await new Promise(r => setTimeout(r, 1000));
+  const apiEv = mine()[1];
+  assert.strictEqual(apiEv[1], 'add_payment_info');
+  assert.strictEqual(J(Object.keys(apiEv[2]).sort()), J(['currency', 'items', 'send_to', 'value']));
+  assert.strictEqual(apiEv[2].items[0].item_id, '1299247', 'itens do evento, não os do modelo do GTM');
+  assert.strictEqual(apiEv[2].ecommerce, undefined);
+  assert.ok(!w.dataLayer.some(e => isA(e) && e[0] === 'config' && e[2] && 'send_page_view' in e[2]), 'sem config/page_view do loader');
+
   console.log('ALL TESTS PASSED:', file.split('/').pop());
 })().catch(e => { console.error('FAIL', e.message, e.stack.split('\n')[1]); process.exit(1); });

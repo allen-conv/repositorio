@@ -2,18 +2,24 @@
 
 Envia os eventos das lojas Convertr para uma propriedade do **GA4**. Cada loja configura quais eventos vão, com que nome, se levam os itens e quais parâmetros extras acompanham.
 
-- Só considera os eventos do **gtag**. O `dataLayer.push` duplicado da Convertr é ignorado, assim como eventos com `send_to` (de outros loaders).
-- Os envios saem por uma **instância própria do gtag**, com dataLayer `cvtGa4DataLayer`. O GTM das lojas mistura nos eventos do dataLayer principal os objetos `items`, `ecommerce` e `eventModel` que a Convertr deixa no modelo. Por esse caminho, até um evento sem itens chegaria ao GA4 com os itens de outra página e com parâmetros `[object Object]`. A instância própria evita isso. O **Consent Mode** da loja (`gtag('consent', ...)`) é espelhado nela automaticamente.
+- Usa primeiro os eventos do **gtag**. O `dataLayer.push` duplicado da Convertr é ignorado, assim como eventos com `send_to` (de outros loaders). **Reserva (v1.1.0):** um evento configurado que chega **só** pelo `dataLayer.push` (ex.: `add_payment_info` em alguns checkouts) é enviado se o mesmo evento não vier pelo gtag em até 2 s. Desligue com `dataLayerFallback: false`.
+- Com um G- que a página ainda não carrega, os envios saem por uma **instância própria do gtag**, com dataLayer `cvtGa4DataLayer`. O GTM das lojas mistura nos eventos do dataLayer principal os objetos `items`, `ecommerce` e `eventModel` que a Convertr deixa no modelo. Por esse caminho, até um evento sem itens chegaria ao GA4 com os itens de outra página e com parâmetros `[object Object]`. A instância própria evita isso. O **Consent Mode** da loja (`gtag('consent', ...)`) é espelhado nela automaticamente.
 - **Itens no esquema do GA4:** `item_id`, `item_name`, `item_variant`, `item_category`, `price`, `quantity`, `index`… O `item_id` pode ser o produto pai, a variação ou o SKU.
 - **Eventos personalizados** com ou sem itens, com parâmetros copiados do evento da loja ou valores fixos.
 - **Opcional:** `user_id` e dados fornecidos pelo usuário a partir do [cvt-user-data](cvt-user-data.md).
 - **Compra uma vez só:** o `purchase` é deduplicado por `transaction_id`, então um F5 na página de obrigado não reenvia.
 
-## ⚠️ Antes de instalar: o GA4 nativo da plataforma
+## O GA4 nativo da plataforma
 
-A Convertr já envia os eventos para o G- informado em **Configurações → Geral** do painel. Se o loader usar **o mesmo G-**, os eventos contam em dobro. Escolha uma opção:
-1. **Trocar o envio nativo pelo loader:** retire o G- do painel da Convertr e use o loader com esse G-. Assim você passa a controlar nomes, itens e parâmetros.
-2. **Manter o nativo e usar o loader em outra propriedade:** por exemplo, uma propriedade da agência ou de consolidação, com outro G-.
+A Convertr já envia os eventos do gtag para o G- informado em **Configurações → Geral** do painel.
+
+- **Loader com o mesmo G- do painel (modo nativo, v1.1.0):** o loader detecta que o G- já está na página e só **completa** o que falta. Não cria outra instância nem `page_view`, e não reenvia um evento que o nativo já mandou com o mesmo nome. Envia apenas:
+  - eventos que chegam só pelo dataLayer (ex.: `add_payment_info`);
+  - eventos renomeados (ex.: `initiate_checkout` → `begin_checkout`) e personalizados.
+  Os envios saem pelo gtag principal com `send_to`, e as chaves `items`, `ecommerce` e `eventModel` que o GTM acrescenta ficam protegidas. `userId` e `userData` ficam a cargo do nativo. Para desligar a detecção: `useExistingTag: false`.
+- **Loader com outro G-** (agência, consolidação): instância própria, envia todos os eventos configurados.
+
+Atenção a renomeações no modo nativo: `initiate_checkout: 'begin_checkout'` faz a propriedade receber os dois (`initiate_checkout` do nativo e `begin_checkout` do loader).
 
 ## Instalação
 
@@ -79,6 +85,8 @@ No checkout e na compra, o `item_id` da Convertr é o ID da **linha do carrinho*
 | `userId` | `false` | envia `user_id` com o ID do cliente (`cvt_ud`) |
 | `userData` | `false` | envia dados fornecidos pelo usuário (hash, `cvt_ud`). Exige ativar a coleta na propriedade |
 | `currency` | `'BRL'` | moeda quando o evento não informar |
+| `dataLayerFallback` | `true` | usa o `dataLayer.push` como reserva para eventos que não vêm pelo gtag |
+| `useExistingTag` | `true` | com o G- já carregado na página, envia por ele e só o que o nativo não envia |
 | `debug` | `false` | log `[cvt-ga4]` no console |
 
 ## Teste

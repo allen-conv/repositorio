@@ -81,7 +81,7 @@
     if (gaPush) return gaPush;
     // ga4-loader na página com o mesmo G-: usa a instância dele
     var g4 = w.cvtGa4, g4c = w.cvtGa4Config;
-    if (g4 && g4.dataLayer && g4c && String(g4c.measurementId || '').toUpperCase() === MID) {
+    if (g4 && g4.dataLayer && !g4.native && g4c && String(g4c.measurementId || '').toUpperCase() === MID) {
       var other = w[g4.dataLayer];
       gaPush = function (args) { other.push(args); };
       log('GA4 via ga4-loader');

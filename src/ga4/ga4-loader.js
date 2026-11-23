@@ -1,20 +1,21 @@
 /*!
- * ga4-loader v1.0.0 — Convertr / Performance
+ * ga4-loader v1.1.0 — Convertr / Performance
  * Envia os eventos da loja Convertr para uma propriedade do GA4, configurando por loja quais
  * eventos vão, com que nome, se levam os itens e quais parâmetros extras.
  *
- *   - considera SOMENTE os eventos disparados via gtag('event', ...); os mesmos eventos
- *     enviados em dataLayer.push({event: ...}) são ignorados (a Convertr envia os dois)
- *   - instância própria do gtag (dataLayer cvtGa4DataLayer): o GTM não mistura campos nos envios;
- *     o Consent Mode da loja é espelhado
+ *   - prioriza os eventos disparados via gtag('event', ...); a cópia em dataLayer.push({event: ...})
+ *     é ignorada (a Convertr envia os dois). Evento que chega SÓ pelo dataLayer (ex.: add_payment_info
+ *     em alguns checkouts) é usado como reserva (dataLayerFallback)
+ *   - G- novo: instância própria do gtag (dataLayer cvtGa4DataLayer), com o Consent Mode espelhado
+ *   - G- que a loja já carrega (GA4 nativo): envia pelo gtag principal e só o que o nativo não envia
+ *     (eventos só do dataLayer, renomeados ou personalizados), sem duplicar
  *   - itens no esquema do GA4 (item_id, item_name, item_variant, item_category, price, quantity...)
  *     com o ID escolhido por loja: produto pai, variação ou SKU
  *   - eventos personalizados com ou sem itens; parâmetros extras copiados do evento da loja
  *   - user_data (dados fornecidos pelo usuário) e user_id a partir do cvt_ud, opcionais
  *   - purchase deduplicado por transaction_id (F5 na página de obrigado não reenvia)
  *
- * ATENÇÃO: não use o mesmo G- que a plataforma já envia nativamente (Configurações → Geral),
- * senão os eventos contam em dobro. Use outro G- ou retire o G- nativo da plataforma.
+ * Com o mesmo G- da plataforma, o loader detecta e não reenvia o que o GA4 nativo já envia.
  *
  * Configuração ANTES do script:
  *   window.cvtGa4Config = {
@@ -69,37 +70,67 @@
     };
   }
 
-  /* ---------------- gtag em dataLayer próprio ---------------- */
-  // O GTM das lojas mistura no dataLayer principal os objetos items/ecommerce/eventModel que a
-  // Convertr deixa no modelo; qualquer evento enviado por ali chegaria ao GA4 com esses campos
-  // (inclusive itens de outra página em eventos sem itens). Por isso o envio usa uma instância
-  // própria do gtag (gtag.js?l=cvtGa4DataLayer), que o GTM não processa.
-  var dl = w[DL_NAME] = w[DL_NAME] || [];
-  var ODL = CFG.ownDataLayer || 'cvtGa4DataLayer';
-  var own = w[ODL] = w[ODL] || [];
-  function gtag() { own.push(arguments); }
-  gtag('js', new Date());
-  var s = d.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=' + MID + '&l=' + ODL;
-  (d.head || d.documentElement).appendChild(s);
-  // espelha o Consent Mode da loja na instância própria
+  /* ---------------- G- já carregado na página? ---------------- */
   function isArgs(e) { return e && typeof e === 'object' && typeof e.length === 'number' && typeof e[0] === 'string'; }
-  function mirrorConsent(e) {
-    if (isArgs(e) && e[0] === 'consent' && (e[1] === 'default' || e[1] === 'update') && e[2] && typeof e[2] === 'object') {
-      var c = {}; for (var k2 in e[2]) if (e[2].hasOwnProperty(k2)) c[k2] = e[2][k2];
-      gtag('consent', e[1], c); log('consent', e[1], c);
-    }
+  var dl = w[DL_NAME] = w[DL_NAME] || [];
+  function nativeTag() {
+    if (w.google_tag_manager && w.google_tag_manager[MID]) return true;
+    for (var n = 0; n < dl.length; n++) if (isArgs(dl[n]) && dl[n][0] === 'config' && String(dl[n][1]).toUpperCase() === MID.toUpperCase()) return true;
+    return false;
   }
-  for (var ci = 0; ci < dl.length; ci++) mirrorConsent(dl[ci]);
+  var MAIN = CFG.useExistingTag !== false && nativeTag();
+  var FALLBACK = CFG.dataLayerFallback !== false;
+  // O GTM/tema das lojas completa todo comando gtag do dataLayer principal com items, ecommerce e
+  // eventModel. No modo MAIN essas chaves viram não enumeráveis e somente leitura (cópia ignorada).
+  function guard(o) {
+    ['items', 'ecommerce', 'eventModel'].forEach(function (k) {
+      if (k === 'items' && o.items) return;
+      try { if (k === 'items') delete o.items; Object.defineProperty(o, k, { get: function () { return undefined; }, set: function () {}, enumerable: false }); } catch (e) {}
+    });
+    return o;
+  }
+
+  /* ---------------- envio: instância própria ou gtag principal ---------------- */
+  // G- novo: instância própria do gtag (gtag.js?l=cvtGa4DataLayer), que o GTM não processa, para
+  // que items/ecommerce/eventModel do modelo do GTM não se misturem nos eventos.
+  // G- já carregado (MAIN): o Google aceita uma instância por ID, então envia pelo dataLayer
+  // principal, com send_to e as chaves protegidas (guard).
+  var ODL = CFG.ownDataLayer || 'cvtGa4DataLayer';
+  var gtag, mirrorConsent = function () {};
+  if (MAIN) {
+    gtag = function () { var a = arguments; if (a[0] === 'event' && a[2]) guard(a[2]); dl.push(a); };
+    ODL = DL_NAME;
+  } else {
+    var own = w[ODL] = w[ODL] || [];
+    gtag = function () { own.push(arguments); };
+    gtag('js', new Date());
+    var s = d.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=' + MID + '&l=' + ODL;
+    (d.head || d.documentElement).appendChild(s);
+    // espelha o Consent Mode da loja na instância própria
+    mirrorConsent = function (e) {
+      if (isArgs(e) && e[0] === 'consent' && (e[1] === 'default' || e[1] === 'update') && e[2] && typeof e[2] === 'object') {
+        var c = {}; for (var k2 in e[2]) if (e[2].hasOwnProperty(k2)) c[k2] = e[2][k2];
+        gtag('consent', e[1], c); log('consent', e[1], c);
+      }
+    };
+    for (var ci = 0; ci < dl.length; ci++) mirrorConsent(dl[ci]);
+  }
 
   /* ---------------- cvt_ud: user_id e user_data ---------------- */
   function readUD() { try { return JSON.parse(w.localStorage.getItem('cvt_ud') || w.sessionStorage.getItem('cvt_ud') || 'null'); } catch (e) { return null; } }
   var cfgParams = { send_page_view: CFG.sendPageView !== false };
-  if (CFG.userId) { var u0 = readUD(); if (u0 && u0.data && u0.data.customer_id) cfgParams.user_id = String(u0.data.customer_id); }
-  gtag('config', MID, cfgParams);
-  log('config', MID, cfgParams, '| eventos:', Object.keys(EVENTS).map(function (k) { return k + '→' + EVENTS[k].name + (EVENTS[k].items ? ' [itens]' : ' [sem itens]'); }));
+  if (MAIN) {
+    // o GA4 nativo já faz config, page_view, user_id e user_data
+    log('G-', MID, 'já carregado na página: usando o GA4 nativo (sem page_view; só o que o nativo não envia)');
+  } else {
+    if (CFG.userId) { var u0 = readUD(); if (u0 && u0.data && u0.data.customer_id) cfgParams.user_id = String(u0.data.customer_id); }
+    gtag('config', MID, cfgParams);
+  }
+  log(MAIN ? 'modo nativo' : 'config', MID, '| eventos:', Object.keys(EVENTS).map(function (k) { return k + '→' + EVENTS[k].name + (EVENTS[k].items ? ' [itens]' : ' [sem itens]'); }));
 
   var lastUD = '';
   function syncUser() {
+    if (MAIN) return;
     var ud = readUD(); if (!ud) return;
     if (CFG.userId && ud.data && ud.data.customer_id) {
       var uid = String(ud.data.customer_id);
@@ -162,9 +193,11 @@
   function txSent(tx) { try { return JSON.parse(w.localStorage.getItem(TX_KEY) || '[]').indexOf(tx) > -1; } catch (e) { return false; } }
   function markTx(tx) { try { var l = JSON.parse(w.localStorage.getItem(TX_KEY) || '[]'); l.push(tx); w.localStorage.setItem(TX_KEY, JSON.stringify(l.slice(-50))); } catch (e) {} }
 
-  function handle(storeEvent, p) {
+  function handle(storeEvent, p, fromGtag) {
     var cfg = EVENTS[storeEvent]; if (!cfg) return;
     p = p || {};
+    // GA4 nativo com o mesmo G- já recebeu esse evento do gtag com o mesmo nome: não duplica
+    if (MAIN && fromGtag && cfg.name === storeEvent) { log(storeEvent, '— já enviado pelo GA4 nativo, ignorado'); return; }
     var em = p.eventModel && typeof p.eventModel === 'object' ? p.eventModel : {};
     function pick(f) { return p[f] != null ? p[f] : em[f]; }
 
@@ -199,17 +232,42 @@
     if (tx) markTx(tx);
   }
 
-  /* ---------------- escuta do dataLayer (somente gtag) ---------------- */
-  function onEntry(e) {
+  /* ---------------- escuta do dataLayer ---------------- */
+  // gtag('event', ...) é a fonte principal. Um dataLayer.push({event}) configurado só é usado se o
+  // mesmo evento não chegar pelo gtag em até FB_WINDOW ms (antes ou depois): reserva para eventos
+  // que a plataforma dispara só no dataLayer.
+  var lastGtag = {}, FB_DELAY = 800, FB_WINDOW = 2000;
+  function objPayload(e) {
+    var p = {}, k;
+    if (e.ecommerce && typeof e.ecommerce === 'object') for (k in e.ecommerce) if (e.ecommerce.hasOwnProperty(k)) p[k] = e.ecommerce[k];
+    for (k in e) if (e.hasOwnProperty(k) && k !== 'event' && k !== 'ecommerce' && k.indexOf('gtm.') !== 0) p[k] = e[k];
+    return p;
+  }
+  function onEntry(e, backlogGtag) {
     try {
       mirrorConsent(e);
-      if (!isArgs(e) || e[0] !== 'event' || typeof e[1] !== 'string') return;
-      var p = e[2] && typeof e[2] === 'object' ? e[2] : {};
-      if (p.send_to) return; // já direcionado (este loader, google-ads-loader etc.)
-      handle(e[1], p);
+      if (isArgs(e)) {
+        if (e[0] !== 'event' || typeof e[1] !== 'string') return;
+        var p = e[2] && typeof e[2] === 'object' ? e[2] : {};
+        if (p.send_to) return; // já direcionado (este loader, google-ads-loader etc.)
+        lastGtag[e[1]] = Date.now();
+        handle(e[1], p, true);
+        return;
+      }
+      if (!FALLBACK || !e || typeof e !== 'object' || typeof e.event !== 'string' || !EVENTS[e.event]) return;
+      var name = e.event, t = Date.now(), payload = objPayload(e);
+      if (backlogGtag) { if (!backlogGtag[name]) { log(name, '— só no dataLayer (reserva)'); handle(name, payload, false); } return; }
+      setTimeout(function () {
+        var g = lastGtag[name];
+        if (g && Math.abs(g - t) < FB_WINDOW) return; // veio pelo gtag: já tratado
+        log(name, '— só no dataLayer (reserva)');
+        handle(name, payload, false);
+      }, FB_DELAY);
     } catch (err) { log('erro', err); }
   }
-  for (var i = 0; i < dl.length; i++) { var be = dl[i]; if (!(isArgs(be) && be[0] === 'consent')) onEntry(be); }
+  var bg = {};
+  for (var i0 = 0; i0 < dl.length; i0++) { var x = dl[i0]; if (isArgs(x) && x[0] === 'event' && typeof x[1] === 'string' && !(x[2] && x[2].send_to)) bg[x[1]] = 1; }
+  for (var i = 0; i < dl.length; i++) { var be = dl[i]; if (!(isArgs(be) && be[0] === 'consent')) onEntry(be, bg); }
   var orig = dl.push;
   dl.push = function () {
     for (var j = 0; j < arguments.length; j++) onEntry(arguments[j]);
@@ -220,5 +278,5 @@
   function hookUD() { if (w.cvtUserData && w.cvtUserData.onChange) { w.cvtUserData.onChange(syncUser); return true; } return false; }
   if (!hookUD()) { var t = 0, iv = setInterval(function () { if (hookUD() || ++t > 20) clearInterval(iv); }, 500); }
 
-  w.cvtGa4 = { version: '1.0.0', send: handle, events: EVENTS, dataLayer: ODL };
+  w.cvtGa4 = { version: '1.1.0', send: handle, events: EVENTS, dataLayer: ODL, native: MAIN };
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);
