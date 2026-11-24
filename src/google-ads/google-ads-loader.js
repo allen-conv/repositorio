@@ -1,5 +1,5 @@
 /*!
- * google-ads-loader v1.0.0 — Convertr / Performance
+ * google-ads-loader v1.1.0 — Convertr / Performance
  * Envia os eventos de e-commerce da loja Convertr para o Google Ads direto pelo gtag,
  * sem tags no GTM:
  *   - conversões (um rótulo por evento: purchase, add_to_cart, begin_checkout, view_item...)
@@ -184,5 +184,41 @@
   function hookUD() { if (w.cvtUserData && w.cvtUserData.onChange) { w.cvtUserData.onChange(syncUserData); return true; } return false; }
   if (!hookUD()) { var t = 0, iv = setInterval(function () { if (hookUD() || ++t > 20) clearInterval(iv); }, 500); }
 
-  w.cvtGads = { version: '1.0.0', send: handle, syncUserData: syncUserData };
+  /* ---------------- cliques (clicks) ---------------- */
+  // clicks: [{ selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true, params: {...} }]
+  // Cada clique vira um evento da loja com esse nome, tratado como os demais (configure-o em conversions).
+  // product: true anexa o produto do último view_item da plataforma (só na página de produto, /p).
+  (function () {
+    var CL = CFG.clicks || []; if (!CL.length || !d) return;
+    var PDP = CFG.productPath ? new RegExp(CFG.productPath) : /\/p\/?$/;
+    function pdpPayload() {
+      if (!PDP.test(w.location.pathname)) return {};
+      for (var n = dl.length - 1; n >= 0; n--) {
+        var e = dl[n];
+        if (e && typeof e === 'object' && typeof e.length === 'number' && e[0] === 'event' && e[1] === 'view_item' && e[2] && !e[2].send_to) {
+          var p = e[2], items = p.items || (p.ecommerce && p.ecommerce.items) || [];
+          return { currency: p.currency, value: p.value, items: items };
+        }
+      }
+      return {};
+    }
+    d.addEventListener('click', function (ev) {
+      CL.forEach(function (c) {
+        var t = ev.target;
+        while (t && t !== d) {
+          var ok = false; try { ok = !!(t.matches && c.selector && t.matches(c.selector)); } catch (er) {}
+          if (ok) {
+            var p = c.product ? pdpPayload() : {};
+            if (c.params) for (var k in c.params) if (c.params.hasOwnProperty(k)) p[k] = c.params[k];
+            log('clique', c.event, p);
+            try { handle(c.event, p); } catch (er2) { log('erro', er2); }
+            break;
+          }
+          t = t.parentElement;
+        }
+      });
+    }, true);
+  })();
+
+  w.cvtGads = { version: '1.1.0', send: handle, syncUserData: syncUserData };
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);

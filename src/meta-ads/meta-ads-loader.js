@@ -1,5 +1,5 @@
 /*!
- * meta-ads-loader v1.1.0 — Convertr / Performance
+ * meta-ads-loader v1.2.0 — Convertr / Performance
  * Envia os eventos de e-commerce da loja Convertr para o Meta Pixel, configurando por loja
  * quais eventos vão, com qual nome e se levam os itens.
  *
@@ -216,6 +216,42 @@
   function hookUD() { if (w.cvtUserData && w.cvtUserData.onChange) { w.cvtUserData.onChange(refreshMatching); return true; } return false; }
   if (!hookUD()) { var t = 0, iv = setInterval(function () { if (hookUD() || ++t > 20) clearInterval(iv); }, 500); }
 
-  w.cvtMeta = { version: '1.1.0', send: handle, events: EVENTS, refreshMatching: refreshMatching };
+  /* ---------------- cliques (clicks) ---------------- */
+  // clicks: [{ selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true, params: {...} }]
+  // Cada clique vira um evento da loja com esse nome, tratado como os demais (configure-o em events).
+  // product: true anexa o produto do último view_item da plataforma (só na página de produto, /p).
+  (function () {
+    var CL = CFG.clicks || []; if (!CL.length || !d) return;
+    var PDP = CFG.productPath ? new RegExp(CFG.productPath) : /\/p\/?$/;
+    function pdpPayload() {
+      if (!PDP.test(w.location.pathname)) return {};
+      for (var n = dl.length - 1; n >= 0; n--) {
+        var e = dl[n];
+        if (e && typeof e === 'object' && typeof e.length === 'number' && e[0] === 'event' && e[1] === 'view_item' && e[2] && !e[2].send_to) {
+          var p = e[2], items = p.items || (p.ecommerce && p.ecommerce.items) || [];
+          return { currency: p.currency, value: p.value, items: items };
+        }
+      }
+      return {};
+    }
+    d.addEventListener('click', function (ev) {
+      CL.forEach(function (c) {
+        var t = ev.target;
+        while (t && t !== d) {
+          var ok = false; try { ok = !!(t.matches && c.selector && t.matches(c.selector)); } catch (er) {}
+          if (ok) {
+            var p = c.product ? pdpPayload() : {};
+            if (c.params) for (var k in c.params) if (c.params.hasOwnProperty(k)) p[k] = c.params[k];
+            log('clique', c.event, p);
+            try { handle(c.event, p); } catch (er2) { log('erro', er2); }
+            break;
+          }
+          t = t.parentElement;
+        }
+      });
+    }, true);
+  })();
+
+  w.cvtMeta = { version: '1.2.0', send: handle, events: EVENTS, refreshMatching: refreshMatching };
   log('pronto | catálogo ' + (FEED_VARIANTS ? 'com' : 'sem') + ' variações | eventos:', Object.keys(EVENTS).map(function (k) { return k + '→' + EVENTS[k].name + (EVENTS[k].custom ? ' (custom)' : '') + (EVENTS[k].items ? ' [itens: ' + (EVENTS[k].variant ? 'variação' : 'produto pai') + ']' : ' [sem itens]'); }));
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);

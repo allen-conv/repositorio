@@ -95,3 +95,20 @@ Um evento que não está na lista não é enviado.
 - `window.cvtMeta.send('add_to_cart', { value, currency, items: [...] })` envia manualmente usando a configuração do evento.
 - `window.cvtMeta.events` mostra a configuração já normalizada.
 - `window.cvtMeta.refreshMatching()` reenvia o Advanced Matching.
+
+## Cliques (`clicks`)
+
+Desde a v1.2.0, o loader também transforma cliques em eventos, sem acionadores no GTM. Cada clique vira um "evento da loja" com o nome que você der, e esse evento é configurado em `events` como qualquer outro.
+
+```js
+clicks: [
+  { selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true },   // "Pedido via WhatsApp" na PDP
+  { selector: '.whatsapp-floater', event: 'whatsapp_flutuante' }        // botão flutuante
+],
+events: { whatsapp_pedido: 'Contact', whatsapp_flutuante: { name: 'Contact', items: false } }
+// com product: true, vai content_ids do produto pai (content_type: product_group)
+```
+
+- `selector`: seletor CSS do elemento (vale clicar em qualquer coisa dentro dele).
+- `product: true`: anexa o produto do último `view_item` da plataforma (valor, moeda e itens). Só vale na página de produto (URL terminada em `/p`; troque com `productPath`).
+- `params`: valores fixos enviados junto.

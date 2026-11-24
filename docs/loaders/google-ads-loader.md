@@ -69,3 +69,19 @@ Na Convertr, o `item_id` dos eventos é o ID interno do produto (ex.: `712277`) 
 
 ## API
 `window.cvtGads.send('purchase', { transaction_id: '...', value: 100, currency: 'BRL', items: [...] })` envia manualmente. `window.cvtGads.syncUserData()` reenvia o `user_data` atual.
+
+## Cliques (`clicks`)
+
+Desde a v1.1.0, o loader também transforma cliques em eventos, sem acionadores no GTM. Cada clique vira um "evento da loja" com o nome que você der, e esse evento é configurado em `conversions` como qualquer outro.
+
+```js
+clicks: [
+  { selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true },   // "Pedido via WhatsApp" na PDP
+  { selector: '.whatsapp-floater', event: 'whatsapp_flutuante' }        // botão flutuante
+],
+conversions: { whatsapp_pedido: 'RÓTULO_PEDIDO', whatsapp_flutuante: 'RÓTULO_FLUTUANTE' }
+```
+
+- `selector`: seletor CSS do elemento (vale clicar em qualquer coisa dentro dele).
+- `product: true`: anexa o produto do último `view_item` da plataforma (valor, moeda e itens). Só vale na página de produto (URL terminada em `/p`; troque com `productPath`).
+- `params`: valores fixos enviados junto.

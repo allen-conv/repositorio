@@ -136,5 +136,23 @@ const gtagPayload = (items, extra) => Object.assign({ items, value: 359.9, curre
   assert.ok([...dom.window.document.scripts].some(s => /fbevents\.js/.test(s.src)), 'injeta fbevents.js');
   assert.strictEqual(typeof dom.window.fbq, 'function');
 
+  /* cliques (clicks) */
+  {
+  const btn = w => { w.document.body.insertAdjacentHTML('beforeend', '<a class="btn-wpp"><span id="wppT">PEDIDO</span></a><section class="whatsapp-floater"><a id="flt">wa</a></section>'); };
+  const clk = (w, id) => w.document.getElementById(id).dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  const w = boot({ pixelId: '1234567890', events: { whatsapp_pedido: { name: 'Contact' }, whatsapp_flutuante: { name: 'CliqueWhatsApp', items: false } },
+    clicks: [{ selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true }, { selector: '.whatsapp-floater', event: 'whatsapp_flutuante' }] });
+  btn(w); w.history.pushState({}, '', '/tenis/p');
+  w.gtag('event', 'view_item', { currency: 'BRL', value: 359.9, items: [pdpItem] });
+  const before = tracks(w).length;
+  clk(w, 'wppT');
+  let t = last(w);
+  assert.strictEqual(t[0], 'track'); assert.strictEqual(t[1], 'Contact');
+  assert.strictEqual(t[2].content_type, 'product_group'); assert.strictEqual(JSON.stringify(t[2].content_ids), JSON.stringify(['712277'])); assert.strictEqual(t[2].value, 359.9);
+  clk(w, 'flt');
+  t = last(w); assert.strictEqual(t[0], 'trackCustom'); assert.strictEqual(t[1], 'CliqueWhatsApp');
+  assert.strictEqual(tracks(w).length, before + 2);
+  }
+
   console.log('ALL TESTS PASSED:', file.split('/').pop());
 })().catch(e => { console.error('FAIL', e.message, e.stack.split('\n')[1]); process.exit(1); });

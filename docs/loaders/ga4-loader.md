@@ -97,3 +97,20 @@ No checkout e na compra, o `item_id` da Convertr é o ID da **linha do carrinho*
 ## API
 - `window.cvtGa4.send('add_to_cart', { value, currency, items: [...] })` envia manualmente usando a configuração do evento.
 - `window.cvtGa4.events` mostra a configuração já normalizada.
+
+## Cliques (`clicks`)
+
+Desde a v1.2.0, o loader também transforma cliques em eventos, sem acionadores no GTM. Cada clique vira um "evento da loja" com o nome que você der, e esse evento é configurado em `events` como qualquer outro.
+
+```js
+clicks: [
+  { selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true },   // "Pedido via WhatsApp" na PDP
+  { selector: '.whatsapp-floater', event: 'whatsapp_flutuante' }        // botão flutuante
+],
+events: { whatsapp_pedido: { name: 'compre_via_whatsapp', items: true }, whatsapp_flutuante: { name: 'clique_whatsapp', items: false } }
+// eventos personalizados só levam itens com items: true
+```
+
+- `selector`: seletor CSS do elemento (vale clicar em qualquer coisa dentro dele).
+- `product: true`: anexa o produto do último `view_item` da plataforma (valor, moeda e itens). Só vale na página de produto (URL terminada em `/p`; troque com `productPath`).
+- `params`: valores fixos enviados junto.

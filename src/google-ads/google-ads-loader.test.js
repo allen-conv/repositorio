@@ -100,5 +100,20 @@ const payload = extra => Object.assign({ items: [item], value: 359.9, currency: 
   dom.window.cvtGadsConfig = CFG; dom.window.eval(code);
   assert.ok([...dom.window.document.scripts].some(s => s.src.includes('gtag/js?id=AW-755098170')), 'injeta gtag.js');
 
+  /* cliques (clicks) */
+  {
+  const btn = w => { w.document.body.insertAdjacentHTML('beforeend', '<a class="btn-wpp"><span id="wppT">PEDIDO</span></a><section class="whatsapp-floater"><a id="flt">wa</a></section>'); };
+  const clk = (w, id) => w.document.getElementById(id).dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  const w = boot({ conversionId: 'AW-10978477517', conversions: { whatsapp_pedido: 'LBL_P', whatsapp_flutuante: 'LBL_F' },
+    clicks: [{ selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true }, { selector: '.whatsapp-floater', event: 'whatsapp_flutuante' }] });
+  btn(w); w.history.pushState({}, '', '/pochete/p');
+  w.gtag('event', 'view_item', { currency: 'BRL', value: 199.9, items: [{ item_id: 1299, item_name: 'Pochete', price: 199.9, quantity: 1 }] });
+  clk(w, 'wppT'); clk(w, 'flt');
+  const c = conv(w);
+  assert.strictEqual(c.length, 2);
+  assert.strictEqual(c[0][2].send_to, 'AW-10978477517/LBL_P'); assert.strictEqual(c[0][2].value, 199.9);
+  assert.strictEqual(c[1][2].send_to, 'AW-10978477517/LBL_F');
+  }
+
   console.log('ALL TESTS PASSED:', file.split('/').pop());
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

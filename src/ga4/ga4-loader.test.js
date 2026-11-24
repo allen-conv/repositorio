@@ -183,5 +183,21 @@ const pl = (items, extra) => Object.assign({ items, value: 359.9, currency: 'BRL
   assert.strictEqual(apiEv[2].ecommerce, undefined);
   assert.ok(!w.dataLayer.some(e => isA(e) && e[0] === 'config' && e[2] && 'send_page_view' in e[2]), 'sem config/page_view do loader');
 
+  /* 15. cliques (clicks), inclusive no modo nativo */
+  {
+  const btn = w => { w.document.body.insertAdjacentHTML('beforeend', '<a class="btn-wpp"><span id="wppT">PEDIDO</span></a><section class="whatsapp-floater"><a id="flt">wa</a></section>'); };
+  const clk = (w, id) => w.document.getElementById(id).dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  const w = boot({ measurementId: 'G-KMMBY1SCXS', events: { whatsapp_pedido: { name: 'compre_via_whatsapp', items: true }, whatsapp_flutuante: { name: 'clique_whatsapp', items: false } },
+    clicks: [{ selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true }, { selector: '.whatsapp-floater', event: 'whatsapp_flutuante', params: { local: 'flutuante' } }] },
+    w => w.gtag('config', 'G-KMMBY1SCXS'));
+  btn(w); w.history.pushState({}, '', '/tenis/p');
+  w.gtag('event', 'view_item', pl([pdpItem]));
+  clk(w, 'wppT'); clk(w, 'flt');
+  const mine = w.dataLayer.filter(e => isA(e) && e[0] === 'event' && e[2] && e[2].send_to === 'G-KMMBY1SCXS');
+  assert.strictEqual(mine.length, 2, 'cliques vão mesmo com o GA4 nativo (o nativo não envia esses eventos)');
+  assert.strictEqual(mine[0][1], 'compre_via_whatsapp'); assert.strictEqual(mine[0][2].value, 359.9); assert.strictEqual(mine[0][2].items[0].item_id, '712277');
+  assert.strictEqual(mine[1][1], 'clique_whatsapp');
+  }
+
   console.log('ALL TESTS PASSED:', file.split('/').pop());
 })().catch(e => { console.error('FAIL', e.message, e.stack.split('\n')[1]); process.exit(1); });

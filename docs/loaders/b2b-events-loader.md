@@ -1,5 +1,7 @@
 # b2b-events-loader
 
+> Para lojas que não são B2B, prefira a opção `clicks` dos loaders individuais (google-ads-loader v1.1.0, ga4-loader v1.2.0, meta-ads-loader v1.2.0).
+>
 > v1.2.0: também envia **conversões do Google Ads** (`gads`) e anexa o **produto da página** em cliques (`product: true`), como o botão "Pedido via WhatsApp".
 
 Eventos extras das lojas **B2B (atacado)** da Convertr, detectados no site e já enviados para o **GA4** e o **Meta**, sem tags nem acionadores no GTM.
