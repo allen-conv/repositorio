@@ -1,6 +1,7 @@
 /*!
- * b2b-events-loader v1.1.0 — Convertr / Performance
- * Eventos extras das lojas B2B (atacado) da Convertr, já enviados para o GA4 e o Meta.
+ * b2b-events-loader v1.2.0 — Convertr / Performance
+ * Eventos extras das lojas Convertr (cadastro B2B, cliques em botões...), já enviados para o GA4, o Meta e
+ * conversões do Google Ads.
  * Substitui a pasta "Eventos B2B - Login" do GTM (tag "Eventos Datalayer - login" + tags GA4 b_*).
  *
  * Eventos detectados:
@@ -17,11 +18,13 @@
  *   window.cvtB2bConfig = {
  *     ga4: 'G-XXXXXXXXXX',        // opcional: sem ele, nada vai para o GA4
  *     metaPixelId: '1234567890',  // opcional: sem ele, nada vai para o Meta
+ *     gads: 'AW-123456789',       // opcional: conta do Google Ads para as conversões (events.x.gads = rótulo)
  *     events: {                   // evento detectado: nome no GA4 / no Meta (false = não envia)
  *       ver_preco:   { ga4: 'b_ver_preco',     meta: 'VerPreco' },
  *       login_start: { ga4: 'b_registrar_pt1', meta: 'IniciouCadastro' },
  *       sign_up:     { ga4: 'b_registrar_pt2', meta: 'CompleteRegistration' }
  *     },
+ *     clicks: [{ selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true }], // product: anexa o produto da PDP
  *     params: true,      // envia trigger e source junto
  *     dataLayer: false,  // true: também faz dataLayer.push({event: ...}) (transição com o GTM)
  *     debug: false
@@ -37,6 +40,10 @@
   var MID = String(CFG.ga4 || '').trim().toUpperCase();
   if (MID && !/^G-[A-Z0-9]{4,}$/.test(MID)) { if (w.console) console.warn('[cvt-b2b] cvtB2bConfig.ga4 inválido (esperado G-XXXXXXXXXX). GA4 desligado.'); MID = ''; }
   var PIXEL = String(CFG.metaPixelId || '').replace(/\D/g, '');
+  var AW = String(CFG.gads || '').replace(/\s/g, '');
+  if (AW && !/^AW-/i.test(AW)) AW = 'AW-' + AW.replace(/\D/g, '');
+  if (AW && !/^AW-\d{5,}$/i.test(AW)) { if (w.console) console.warn('[cvt-b2b] cvtB2bConfig.gads inválido (esperado AW-123456789). Google Ads desligado.'); AW = ''; }
+  AW = AW.toUpperCase();
   w.__cvtB2bLoaded = true;
 
   var DL_NAME = CFG.dataLayerName || 'dataLayer';
@@ -146,6 +153,43 @@
     if (!(mc && String(mc.pixelId || '').replace(/\D/g, '') === PIXEL)) { w.fbq('init', PIXEL, matchData()); log('Meta init', PIXEL); }
   }
 
+  /* ---------------- Google Ads (conversões por rótulo) ---------------- */
+  function mainPush(a) { if (a[0] === 'event' && a[2]) guard(a[2]); dl.push(a); }
+  var adsReady = false;
+  function ads() {
+    if (adsReady) return; adsReady = true;
+    if (w.google_tag_manager && w.google_tag_manager[AW]) return; // google-ads-loader ou tag do Google já carregou a conta
+    for (var n = 0; n < dl.length; n++) if (isArgs(dl[n]) && dl[n][0] === 'config' && String(dl[n][1]).toUpperCase() === AW) return;
+    mainPush(args('js', new Date()));
+    mainPush(args('config', AW, { send_page_view: false }));
+    var s = d.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=' + AW;
+    (d.head || d.documentElement).appendChild(s);
+    log('Google Ads carregado', AW);
+  }
+
+  /* ---------------- produto da página (para cliques com product: true) ---------------- */
+  // Último view_item da plataforma (gtag), só na página de produto (URL terminada em /p)
+  function lastProduct() {
+    var re = CFG.productPath ? new RegExp(CFG.productPath) : /\/p\/?$/;
+    if (!re.test(w.location.pathname)) return null;
+    for (var n = dl.length - 1; n >= 0; n--) {
+      var e = dl[n];
+      if (!(isArgs(e) && e[0] === 'event' && e[1] === 'view_item' && e[2] && !e[2].send_to)) continue;
+      var p = e[2], list = p.items || (p.ecommerce && p.ecommerce.items) || [];
+      var items = [], value = 0;
+      for (var k = 0; k < list.length; k++) {
+        var it = list[k] || {}, price = Number(it.price) || 0;
+        var o = { item_id: String(it.item_id != null ? it.item_id : (it.id != null ? it.id : '')), item_name: it.item_name || it.name, price: price, quantity: 1 };
+        if (it.item_brand) o.item_brand = it.item_brand;
+        if (it.item_category) o.item_category = it.item_category;
+        if (o.item_id) { items.push(o); value += price; }
+      }
+      if (!items.length) return null;
+      return { items: items, value: Math.round(value * 100) / 100, currency: p.currency || CFG.currency || 'BRL' };
+    }
+    return null;
+  }
+
   /* ---------------- envio ---------------- */
   function source() {
     var p = w.location.pathname;
@@ -155,7 +199,7 @@
     return p;
   }
 
-  function fire(name, params) {
+  function fire(name, params, prod) {
     params = params || {};
     if (!('source' in params)) params.source = source();
     if (CFG.dataLayer) { var o = { event: name }; for (var k in params) o[k] = params[k]; dl.push(o); }
@@ -167,14 +211,27 @@
 
     if (MID && cfg.ga4) {
       var gd = { send_to: MID }; for (var a in data) gd[a] = data[a];
+      if (prod) { gd.currency = prod.currency; gd.value = prod.value; gd.items = prod.items; }
       ga()(args('event', String(cfg.ga4), gd));
       log('GA4', cfg.ga4, gd);
     }
     if (PIXEL && cfg.meta) {
       meta();
       var mn = String(cfg.meta), md = {}; for (var b in data) md[b] = data[b];
+      if (prod) {
+        md.currency = prod.currency; md.value = prod.value; md.content_type = 'product_group';
+        md.content_ids = prod.items.map(function (i) { return i.item_id; });
+        md.contents = prod.items.map(function (i) { return { id: i.item_id, quantity: i.quantity, item_price: i.price }; });
+      }
       w.fbq(STANDARD[mn] ? 'trackSingle' : 'trackSingleCustom', PIXEL, mn, md);
       log('Meta', STANDARD[mn] ? 'trackSingle' : 'trackSingleCustom', mn, md);
+    }
+    if (AW && cfg.gads) {
+      ads();
+      var ad = { send_to: AW + '/' + String(cfg.gads) };
+      if (prod) { ad.value = prod.value; ad.currency = prod.currency; }
+      mainPush(args('event', 'conversion', ad));
+      log('Google Ads conversão', ad.send_to, ad);
     }
   }
 
@@ -194,7 +251,7 @@
     // cliques personalizados
     (CFG.clicks || []).forEach(function (c) {
       var t = ev.target;
-      while (t && t !== d) { if (matches(t, c.selector)) { fire(c.event, c.params ? JSON.parse(JSON.stringify(c.params)) : {}); break; } t = t.parentElement; }
+      while (t && t !== d) { if (matches(t, c.selector)) { fire(c.event, c.params ? JSON.parse(JSON.stringify(c.params)) : {}, c.product ? lastProduct() : null); break; } t = t.parentElement; }
     });
   }, true);
 
@@ -272,6 +329,6 @@
     };
   }
 
-  w.cvtB2b = { version: '1.1.0', fire: fire, events: EVENTS };
-  log('pronto | GA4:', MID || '—', '| Meta:', PIXEL || '—', '| eventos:', Object.keys(EVENTS).map(function (k) { return k + '→' + (EVENTS[k].ga4 || '—') + '/' + (EVENTS[k].meta || '—'); }));
+  w.cvtB2b = { version: '1.2.0', fire: fire, events: EVENTS };
+  log('pronto | GA4:', MID || '—', '| Meta:', PIXEL || '—', '| Google Ads:', AW || '—', '| eventos:', Object.keys(EVENTS).map(function (k) { return k + '→' + (EVENTS[k].ga4 || '—') + '/' + (EVENTS[k].meta || '—'); }));
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);

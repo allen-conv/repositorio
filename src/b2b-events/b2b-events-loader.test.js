@@ -10,7 +10,8 @@ const HTML = '<!doctype html><head><script></script></head><body>' +
   '<a class="go__create-account" id="cc">Criar conta</a>' +
   '<a class="name" id="vit">Produto</a>' +
   '<div id="wrap"><div class="overlay" id="ov"></div></div>' +
-  '<button class="cta-whats" id="wa">WhatsApp</button></body>';
+  '<button class="cta-whats" id="wa">WhatsApp</button>' +
+  '<a class="btn-wpp" id="wpp"><span id="wppTxt">PEDIDO VIA WHATSAPP</span></a><section class="whatsapp-floater"><a id="flt">wa</a></section></body>';
 
 function boot(cfg, opts) {
   opts = opts || {};
@@ -137,6 +138,40 @@ const CFG = { ga4: 'G-ABC1234', metaPixelId: '111222333' };
   w = boot({ ga4: 'UA-123', metaPixelId: '111222333' });
   click(w, 'vp'); openPopup(w); await tick();
   assert.ok(!w.cvtB2bDataLayer); assert.strictEqual(metaEvents(w).length, 1);
+
+  /* 12. cliques com produto da PDP + conversões do Google Ads */
+  const C12 = { ga4: 'G-ABC1234', metaPixelId: '111222333', gads: '10978477517',
+    events: {
+      whatsapp_pedido:    { ga4: 'compre_via_whatsapp', meta: 'Contact', gads: 'LBL_PEDIDO' },
+      whatsapp_flutuante: { ga4: 'clique_whatsapp', gads: 'LBL_FLUT' }
+    },
+    clicks: [
+      { selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true },
+      { selector: '.whatsapp-floater a', event: 'whatsapp_flutuante' }
+    ] };
+  w = boot(C12, { url: 'https://loja.com.br/pochete-preta-123/p', before: w => {
+    w.dataLayer.push((function () { return arguments; })('event', 'view_item', { currency: 'BRL', value: 199.9, items: [{ item_id: 1299, item_name: 'Pochete', price: 199.9, item_category: 'Bolsas' }] }));
+  } });
+  click(w, 'wppTxt'); await tick();
+  ga = gaEvents(w);
+  assert.strictEqual(ga.length, 1); assert.strictEqual(ga[0].name, 'compre_via_whatsapp');
+  assert.strictEqual(ga[0].p.value, 199.9); assert.strictEqual(ga[0].p.currency, 'BRL');
+  assert.strictEqual(JSON.stringify(ga[0].p.items), JSON.stringify([{ item_id: '1299', item_name: 'Pochete', price: 199.9, quantity: 1, item_category: 'Bolsas' }]));
+  me = metaEvents(w);
+  assert.strictEqual(me.length, 1); assert.strictEqual(me[0][0], 'trackSingle'); assert.strictEqual(me[0][2], 'Contact');
+  assert.strictEqual(JSON.stringify(me[0][3].content_ids), JSON.stringify(['1299'])); assert.strictEqual(me[0][3].value, 199.9);
+  const conv = () => w.dataLayer.filter(a => a && a[0] === 'event' && a[1] === 'conversion').map(a => a[2]);
+  assert.strictEqual(conv().length, 1); assert.strictEqual(conv()[0].send_to, 'AW-10978477517/LBL_PEDIDO'); assert.strictEqual(conv()[0].value, 199.9);
+  assert.ok(w.dataLayer.some(a => a && a[0] === 'config' && a[1] === 'AW-10978477517'), 'carrega a conta do Ads quando não está na página');
+  click(w, 'flt'); await tick();
+  assert.strictEqual(conv().length, 2); assert.strictEqual(conv()[1].send_to, 'AW-10978477517/LBL_FLUT'); assert.strictEqual(conv()[1].value, undefined);
+  assert.strictEqual(gaEvents(w).slice(-1)[0].name, 'clique_whatsapp');
+  assert.strictEqual(metaEvents(w).length, 1, 'flutuante sem meta');
+  // fora da PDP: sem produto
+  w = boot(C12, { url: 'https://loja.com.br/', before: w => { w.google_tag_manager = { 'AW-10978477517': {} }; w.dataLayer.push((function () { return arguments; })('event', 'view_item', { items: [{ item_id: 1, price: 10 }] })); } });
+  click(w, 'wppTxt'); await tick();
+  assert.strictEqual(gaEvents(w)[0].p.items, undefined);
+  assert.ok(!w.dataLayer.some(a => a && a[0] === 'config' && a[1] === 'AW-10978477517'), 'conta já na página: não recarrega');
 
   /* 11. G- já carregado na página (nativo): envia pelo dataLayer principal, sem items/ecommerce/eventModel */
   w = boot(CFG, { before: w => { w.google_tag_manager = { 'G-ABC1234': {} };

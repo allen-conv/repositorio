@@ -1,5 +1,7 @@
 # b2b-events-loader
 
+> v1.2.0: também envia **conversões do Google Ads** (`gads`) e anexa o **produto da página** em cliques (`product: true`), como o botão "Pedido via WhatsApp".
+
 Eventos extras das lojas **B2B (atacado)** da Convertr, detectados no site e já enviados para o **GA4** e o **Meta**, sem tags nem acionadores no GTM.
 
 Substitui a pasta **"Eventos B2B - Login"** do GTM (exemplo: Sol Jeans B2B, `GTM-WKQKJF7B`):
@@ -53,7 +55,8 @@ Sem `events`, o loader usa exatamente esse mapeamento, que reproduz os nomes de 
 | `events` | mapeamento acima | Evento detectado → `{ ga4: 'nome', meta: 'Nome', extra: {...} }`. `false` ou ausente = não envia para aquele destino |
 | `params` | `true` | Envia `trigger` e `source` junto |
 | `dataLayer` | `false` | Também faz `dataLayer.push({event, trigger, source})`, para usar no GTM durante a transição |
-| `clicks` | `[]` | Eventos por clique: `[{ selector: '.btn-whats', event: 'whatsapp', params: { local: 'pdp' } }]` |
+| `clicks` | `[]` | Eventos por clique: `[{ selector: '.btn-whats', event: 'whatsapp', params: { local: 'pdp' }, product: true }]`. `product: true` anexa o produto do último `view_item` (só na página de produto, URL terminada em `/p`): `items`/`value`/`currency` no GA4, `content_ids`/`value` no Meta, `value` no Google Ads |
+| `gads` | — | Conta do Google Ads (`AW-123456789`). Em `events`, `gads: 'RÓTULO'` envia `conversion` com `send_to: 'AW-…/RÓTULO'`. Se a conta não estiver na página (google-ads-loader ou tag do Google), o loader carrega |
 | `api` | `[]` | Eventos por chamada de API: `[{ url: 'api/...', method: 'POST', event: 'nome', once: true }]` |
 | `selectors` | tema padrão | Troca os seletores do tema: `verPreco`, `criarConta`, `vitrine`, `popup`, `popupContent` |
 | `debug` | `false` | Mostra no console cada evento detectado e enviado (`[cvt-b2b] …`) |
@@ -85,3 +88,22 @@ Para disparar um evento manualmente: `cvtB2b.fire('sign_up', { teste: 1 })`.
 
 - **Seletores do tema:** a detecção do clique e do pop-up depende das classes do tema B2B (`register__show-price-btn-default`, `go__create-account`, `.overlay.visible` + `.big-wrapper`). Se a loja usar outro tema, ajuste `selectors`.
 - No GA4, para ver `trigger` e `source` nos relatórios, crie as dimensões personalizadas (escopo de evento).
+
+## Exemplo: cliques de WhatsApp (Vivi Macedo)
+
+```html
+<script>
+  window.cvtB2bConfig = {
+    ga4: 'G-XXXXXXXXXX',
+    gads: 'AW-10978477517',
+    events: {
+      whatsapp_pedido:    { ga4: 'compre_via_whatsapp', gads: 'RÓTULO_PEDIDO' },
+      whatsapp_flutuante: { ga4: 'clique_whatsapp_flutuante', gads: 'RÓTULO_FLUTUANTE' }
+    },
+    clicks: [
+      { selector: 'a.btn-wpp', event: 'whatsapp_pedido', product: true },
+      { selector: '.whatsapp-floater a, .whatsapp-floater', event: 'whatsapp_flutuante' }
+    ]
+  };
+</script>
+```
