@@ -1,5 +1,5 @@
 /*!
- * google-ads-loader v1.1.0 — Convertr / Performance
+ * google-ads-loader v1.1.1 — Convertr / Performance
  * Envia os eventos de e-commerce da loja Convertr para o Google Ads direto pelo gtag,
  * sem tags no GTM:
  *   - conversões (um rótulo por evento: purchase, add_to_cart, begin_checkout, view_item...)
@@ -32,7 +32,13 @@
   if (!/^AW-\d+$/.test(AW)) { if (w.console) console.warn('[cvt-gads] cvtGadsConfig.conversionId ausente ou inválido (esperado AW-123456789). Loader não iniciado.'); return; }
   w.__cvtGadsLoaded = true;
 
-  var CONV = CFG.conversions || {};
+  // Rótulos de conversão: só os válidos (placeholders do GTM como '.', '' ou '{{...}}' são ignorados com aviso)
+  var CONV = {}, rawConv = CFG.conversions || {};
+  for (var ck in rawConv) if (rawConv.hasOwnProperty(ck)) {
+    var lb = typeof rawConv[ck] === 'string' ? rawConv[ck].trim() : '';
+    if (/^[A-Za-z0-9_-]{4,}$/.test(lb)) CONV[ck] = lb;
+    else if (w.console) console.warn('[cvt-gads] rótulo de conversão inválido em "' + ck + '": ' + JSON.stringify(rawConv[ck]) + ' — conversão desligada.');
+  }
   var REMARKETING = CFG.remarketing !== false;
   var EC = CFG.enhancedConversions !== false;
   var ID_FIELD = CFG.itemIdField || 'item_id';
@@ -220,5 +226,5 @@
     }, true);
   })();
 
-  w.cvtGads = { version: '1.1.0', send: handle, syncUserData: syncUserData };
+  w.cvtGads = { version: '1.1.1', send: handle, syncUserData: syncUserData };
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);

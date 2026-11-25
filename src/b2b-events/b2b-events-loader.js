@@ -1,5 +1,5 @@
 /*!
- * b2b-events-loader v1.2.0 — Convertr / Performance
+ * b2b-events-loader v1.2.1 — Convertr / Performance
  * Eventos extras das lojas Convertr (cadastro B2B, cliques em botões...), já enviados para o GA4, o Meta e
  * conversões do Google Ads.
  * Substitui a pasta "Eventos B2B - Login" do GTM (tag "Eventos Datalayer - login" + tags GA4 b_*).
@@ -154,6 +154,8 @@
   }
 
   /* ---------------- Google Ads (conversões por rótulo) ---------------- */
+  // Rótulo de conversão real: letras, números, _ e -, com 4+ caracteres. Placeholders do GTM ('.', '', '{{...}}') são ignorados.
+  function validLabel(l) { return typeof l === 'string' && /^[A-Za-z0-9_-]{4,}$/.test(l.trim()); }
   function mainPush(a) { if (a[0] === 'event' && a[2]) guard(a[2]); dl.push(a); }
   var adsReady = false;
   function ads() {
@@ -226,7 +228,8 @@
       w.fbq(STANDARD[mn] ? 'trackSingle' : 'trackSingleCustom', PIXEL, mn, md);
       log('Meta', STANDARD[mn] ? 'trackSingle' : 'trackSingleCustom', mn, md);
     }
-    if (AW && cfg.gads) {
+    if (AW && cfg.gads && !validLabel(cfg.gads)) log('AVISO: rótulo do Google Ads inválido em', name, JSON.stringify(cfg.gads), '— conversão não enviada');
+    if (AW && validLabel(cfg.gads)) {
       ads();
       var ad = { send_to: AW + '/' + String(cfg.gads) };
       if (prod) { ad.value = prod.value; ad.currency = prod.currency; }
@@ -329,6 +332,6 @@
     };
   }
 
-  w.cvtB2b = { version: '1.2.0', fire: fire, events: EVENTS };
+  w.cvtB2b = { version: '1.2.1', fire: fire, events: EVENTS };
   log('pronto | GA4:', MID || '—', '| Meta:', PIXEL || '—', '| Google Ads:', AW || '—', '| eventos:', Object.keys(EVENTS).map(function (k) { return k + '→' + (EVENTS[k].ga4 || '—') + '/' + (EVENTS[k].meta || '—'); }));
 })(typeof window !== 'undefined' ? window : null, typeof document !== 'undefined' ? document : null);

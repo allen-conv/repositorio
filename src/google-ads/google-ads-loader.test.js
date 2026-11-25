@@ -115,5 +115,14 @@ const payload = extra => Object.assign({ items: [item], value: 359.9, currency: 
   assert.strictEqual(c[1][2].send_to, 'AW-10978477517/LBL_F');
   }
 
+  /* rótulos inválidos (placeholders) são ignorados */
+  {
+  const w = boot({ conversionId: 'AW-18389955176', conversions: { purchase: '.', add_to_cart: '', view_item: 'bFl4CNOH1eEcEOjkgcFE' } });
+  w.gtag('event', 'add_to_cart', { value: 10, currency: 'BRL', items: [] });
+  w.gtag('event', 'view_item', { value: 10, currency: 'BRL', items: [] });
+  const c = conv(w);
+  assert.strictEqual(c.length, 1); assert.strictEqual(c[0][2].send_to, 'AW-18389955176/bFl4CNOH1eEcEOjkgcFE');
+  }
+
   console.log('ALL TESTS PASSED:', file.split('/').pop());
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

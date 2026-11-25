@@ -173,6 +173,12 @@ const CFG = { ga4: 'G-ABC1234', metaPixelId: '111222333' };
   assert.strictEqual(gaEvents(w)[0].p.items, undefined);
   assert.ok(!w.dataLayer.some(a => a && a[0] === 'config' && a[1] === 'AW-10978477517'), 'conta já na página: não recarrega');
 
+  /* 13. rótulo do Google Ads inválido (placeholder do GTM) não envia conversão */
+  w = boot({ ga4: 'G-ABC1234', gads: 'AW-18389955176', events: { ver_preco: { ga4: 'b_ver_preco', gads: '.' } } });
+  click(w, 'vp'); openPopup(w); await tick();
+  assert.strictEqual(gaEvents(w).length, 1);
+  assert.ok(!w.dataLayer.some(a => a && a[0] === 'event' && a[1] === 'conversion'), 'sem conversion com rótulo "."');
+
   /* 11. G- já carregado na página (nativo): envia pelo dataLayer principal, sem items/ecommerce/eventModel */
   w = boot(CFG, { before: w => { w.google_tag_manager = { 'G-ABC1234': {} };
     const op = w.dataLayer.push; // simula o GTM/tema que completa os comandos gtag
