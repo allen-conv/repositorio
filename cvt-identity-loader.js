@@ -1,5 +1,5 @@
 /*!
- * cvt-identity-loader v0.1.1 (TESTE) — Convertr / Performance
+ * cvt-identity-loader v0.1.2 (TESTE) — Convertr / Performance
  * Mede quanto dá para reconhecer o mesmo visitante sem login e sem envolver a plataforma:
  *   - ID do aparelho (cookie first-party gravado por JS + espelho no localStorage)
  *   - sessão e número da visita
@@ -19,7 +19,7 @@
   'use strict';
   if (!w || w.cvtIdentity) return;
 
-  var V = '0.1.1';
+  var V = '0.1.2';
   var CFG = w.cvtIdentityConfig || {};
   var ENDPOINT = CFG.endpoint || 'https://n8n.srv771010.hstgr.cloud/webhook/cv-identity-test';
   var DEBUG = !!CFG.debug;
@@ -242,6 +242,7 @@
     if (!consent || CFG.ipLookup === false) return Promise.resolve('');
     var cached = sGet('sessionStorage', 'cvt_ip');
     if (cached) return Promise.resolve(cached);
+    if (typeof fetch !== 'function') return Promise.resolve('');
     ipPromise = ipPromise || fetch(IP_URL, { credentials: 'omit' }).then(function (r) { return r.json(); })
       .then(function (j) { var ip = (j && j.ip) || ''; if (ip) sSet('sessionStorage', 'cvt_ip', ip); return ip; })
       .catch(function () { return ''; });
@@ -294,10 +295,20 @@
     return p;
   }
   function track(eventName, extra) {
-    var p = base(eventName, extra);
+    var p = null;
+    try { p = base(eventName, extra); } catch (e) { log('erro base', e); return; }
+    try { trackFull(p); } catch (e) { log('erro track', e); p.err = String(e && e.message || e).slice(0, 120); send(p); }
+  }
+  function trackFull(p) {
     if (!p.consent) { send(p); return; }
-    if (CFG.fingerprint !== false) fpPromise = fpPromise || fingerprint().catch(function () { return { stable: '', full: '', parts: '' }; });
-    Promise.all([fpPromise || Promise.resolve(null), publicIp(p.consent)]).then(function (r) {
+    if (CFG.fingerprint !== false && !fpPromise) {
+      try { fpPromise = fingerprint().catch(function () { return null; }); } catch (e) { fpPromise = Promise.resolve(null); }
+    }
+    // nunca segura o evento: fingerprint e IP têm até 1,5 s; depois disso o evento sai sem eles
+    function capped(pr, fallback) {
+      return Promise.race([pr.catch(function () { return fallback; }), new Promise(function (res) { setTimeout(function () { res(fallback); }, 1500); })]);
+    }
+    Promise.all([capped(fpPromise || Promise.resolve(null), null), capped(publicIp(p.consent), '')]).then(function (r) {
       var fp = r[0];
       if (fp) { state.fp = fp; p.fp_stable = fp.stable; p.fp_full = fp.full; p.fp_parts = fp.parts; }
       p.ip_client = r[1] || '';
