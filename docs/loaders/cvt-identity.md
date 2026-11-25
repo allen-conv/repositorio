@@ -51,7 +51,7 @@ Workflow **Rastreador | Identidade de visitantes (teste)**:
 
 ## Como testar
 - `window.cvtIdentity.state()` mostra consentimento, ID do aparelho e fingerprint.
-- `window.cvtIdentity.reset()` apaga o ID (simula visitante novo).
+- `window.cvtIdentity.reset()` apaga o ID (simula visitante novo). No celular, abra qualquer página com `?_cv_reset=1` no fim da URL.
 - Conferir as linhas na tabela `rastreador_eventos_teste` do n8n.
 
 ## Lojas que usam

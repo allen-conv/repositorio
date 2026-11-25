@@ -1,5 +1,5 @@
 /*!
- * cvt-identity-loader v0.1.2 (TESTE) — Convertr / Performance
+ * cvt-identity-loader v0.1.3 (TESTE) — Convertr / Performance
  * Mede quanto dá para reconhecer o mesmo visitante sem login e sem envolver a plataforma:
  *   - ID do aparelho (cookie first-party gravado por JS + espelho no localStorage)
  *   - sessão e número da visita
@@ -19,7 +19,7 @@
   'use strict';
   if (!w || w.cvtIdentity) return;
 
-  var V = '0.1.2';
+  var V = '0.1.3';
   var CFG = w.cvtIdentityConfig || {};
   var ENDPOINT = CFG.endpoint || 'https://n8n.srv771010.hstgr.cloud/webhook/cv-identity-test';
   var DEBUG = !!CFG.debug;
@@ -339,6 +339,18 @@
     reset: function () { forgetDid(); sDel('sessionStorage', SID_KEY); sDel('sessionStorage', DID_KEY); state.did = null; }
   };
   w.cvtIdentity = api;
+
+  // ?_cv_reset=1 na URL: apaga ID, sessão, visitas e token deste navegador (recomeçar o teste sem devtools)
+  try {
+    var ru = new URL(location.href);
+    if (ru.searchParams.has('_cv_reset')) {
+      api.reset();
+      sDel('sessionStorage', 'cvt_ip'); sDel('sessionStorage', 'cvt_id_last'); sDel('sessionStorage', VN_KEY);
+      ru.searchParams.delete('_cv_reset');
+      history.replaceState(history.state, '', ru.pathname + (ru.searchParams.toString() ? '?' + ru.searchParams.toString() : '') + ru.hash);
+      log('reset feito');
+    }
+  } catch (e) {}
 
   state.lastIdentity = sGet('sessionStorage', 'cvt_id_last') || '';
   pageView();
